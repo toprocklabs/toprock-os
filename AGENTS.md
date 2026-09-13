@@ -19,6 +19,9 @@ Check `node_modules/next/dist/docs/` when changing framework behavior.
 2. Configure env in `.env.local`:
    - `DATABASE_URL=...`
    - `AUTH_SECRET=...` (>= 32 chars)
+   - `CRM_AGENT_TOKEN=...` (>= 32 chars) — machine auth for `/api/mcp` (Paul / PM agents). Do not reuse `AUTH_SECRET`.
+   - optional: `GITHUB_TOKEN` + `GITHUB_ORG` (default `toprocklabs`) for `npm run sync:repos` and the agent `sync_project_repos` tool
+   - optional: `CRM_AGENT_AUTO_APPLY=true` to auto-apply high-confidence suggestions (off by default; stage/money/account updates never auto-apply)
 3. Sync DB schema:
    - `npm run db:generate`
    - `npm run db:push`
@@ -36,6 +39,10 @@ Check `node_modules/next/dist/docs/` when changing framework behavior.
 - `src/lib/db.ts` shared Neon Drizzle client
 - `src/lib/auth.ts` session create/verify helpers
 - `src/lib/normalize.ts` pure input normalizers (text/url/phone/date) used by actions
+- `src/lib/agent/` PM-agent MCP surface: bearer auth, suggestion payload schemas, apply-on-approve, tool dispatch
+- `src/lib/github/sync-repos.ts` shared GitHub org → `project_repos` reconcile (CLI + agent tool)
+- `src/app/api/mcp/` Streamable HTTP MCP endpoint
+- `src/app/api/agent/` small REST companions (`/health`, `/sync-repos`)
 - `src/components/` shared UI helpers (`crm-shell`, autosave fields, call link, collapsible form section)
 - `drizzle/` generated migrations
 - `tests/` `node:test` suites for pure logic — run with `npm test`
@@ -55,6 +62,7 @@ Check `node_modules/next/dist/docs/` when changing framework behavior.
 - `/tasks`
 - `/activities`
 - `/inbox` human-in-the-loop queue for agent-proposed writes (`suggestions`)
+- **Agent API (bearer token, not the human session cookie):** `POST /api/mcp` Streamable HTTP MCP; `GET /api/agent/health`; `POST /api/agent/sync-repos`
 - `/map` geocoded account map + proximity sourcing
 - **Public, PIN-gated (no login):** `/p/[slug]` client-facing Statement of Work + signing, `/p/[slug]/terms` Terms of Service, `POST /p/[slug]/sign` signing endpoint
 - compatibility redirects: `/customers` and `/customers/[id]`
@@ -134,6 +142,51 @@ Check `node_modules/next/dist/docs/` when changing framework behavior.
 - Mapping new repos: `node scripts/map-repos.mjs` reports, `--apply` writes. The slug matcher gets ~70%; links it can't reach (`scuba-dive-riverton` → *Scuba Dive Utah*) live in `MANUAL_LINKS` inside that script so the mapping is reproducible from an empty database.
 - The "Last push" column shows `MAX(last_push_at)` across an account's non-archived repos. An account with **no linked repo renders grey `—` and sorts last in both directions** — it is unmeasured, not stale, and must never be colored like an abandoned account.
 - Recency bands live in `src/lib/push-recency.ts` (pure, `now` passed in, covered by `tests/push-recency.test.ts`). Change thresholds there, not in the page.
+- Authenticated exception: `sync_project_repos` (MCP) and `POST /api/agent/sync-repos` call GitHub with `GITHUB_TOKEN` to refresh the mirror. `/accounts` still reads Postgres only.
+
+## PM agent API (Paul)
+
+External PM agents keep the CRM current from meetings and git activity **without writing core tables**. They connect to Streamable HTTP MCP at `/api/mcp` (Cursor / Grok Bot compatible). Human cookie login is unchanged.
+
+### Connect
+1. Set `CRM_AGENT_TOKEN` in the deployment env (>= 32 chars). Never commit it.
+2. MCP URL: `https://<host>/api/mcp`
+3. Header: `Authorization: Bearer <CRM_AGENT_TOKEN>`
+4. Transport: Streamable HTTP JSON-RPC (`initialize` → `notifications/initialized` → `tools/list` / `tools/call`). `GET /api/mcp` with the same bearer returns server metadata.
+5. REST backups: `GET /api/agent/health`, `POST /api/agent/sync-repos` (`{ "dryRun": true }` optional). Same bearer. Useful for curl / a later cron — do not invent an in-app cron.
+
+### Tools
+**Read:** `list_accounts`, `get_account`, `list_contacts`, `get_contact`, `list_opportunities`, `get_opportunity`, `list_tasks`, `list_activities`, `list_suggestions`, `list_project_repos`.
+**Write (propose only by default):** `propose_suggestion` inserts a `suggestions` row (`source=agent`, `status=pending`) and an `agent_runs` row (`loop=pm_agent`).
+**Sync:** `sync_project_repos` runs the same reconcile as `npm run sync:repos` (does not touch `company_id` / `is_internal`).
+
+### `propose_suggestion` envelope
+```
+{ kind, title, evidence, confidence (0-100), payload, model?, loop? }
+```
+`evidence` is required. Inbox approval (`approveSuggestion`) applies the payload via `src/lib/agent/apply-suggestion.ts`.
+
+### Suggestion kinds + payloads
+- `new_company` — `{ name, category?, address?, lat?, lng?, nearCompanyId?, nearCompanyName?, distanceMeters?, industry?, website? }` (sourcing + agent)
+- `new_contact` — `{ firstName, lastName, email?, phone?, title?, linkedinProfileUrl?, companyId? }` (US phone normalized)
+- `new_edge` — `{ fromType, fromId, toType, toId, edgeType, strength?, evidence? }`
+- `log_activity` — `{ type, notes, companyId?, contactId?, dealId?, occurredOn? }` (must attach to at least one record)
+- `stage_change` — `{ target: "account"|"opportunity", id, stage, reason }` (`reason` + evidence required)
+- `new_deal` — `{ name, companyId, stage?, ownerName?, nextStep?, nextStepDueDate?, expectedCloseDate?, primaryContactId?, valueCents?, implementationCostCents? }`
+- `update_deal` — `{ dealId, fields: { name?, nextStep?, nextStepDueDate?, expectedCloseDate?, ownerName?, primaryContactId?, valueCents?, implementationCostCents? } }`
+- `update_account` — `{ companyId, fields: { name?, stage?, nextStep?, nextStepDueDate?, website?, industry? } }`
+
+Money fields (`valueCents` / `implementationCostCents`) are rejected unless `evidence` cites a number.
+
+### Safety rules (also sent as MCP `instructions`)
+- **Propose, don't apply.** Default path is `/inbox`. Auto-apply requires `CRM_AGENT_AUTO_APPLY=true` and high confidence (`CRM_AGENT_AUTO_APPLY_MIN_CONFIDENCE`, default 95). Allowlist default is `log_activity` only (`CRM_AGENT_AUTO_APPLY_KINDS`). `stage_change`, `new_deal`, `update_deal`, and `update_account` never auto-apply.
+- **Do not invent deal values.** Omit MRR / implementation cost unless a meeting, email, or signed SOW stated the number.
+- **Stage changes need evidence.** No speculative pipeline movement.
+- **Never contact clients.** This API does not send mail, place calls, or message anyone.
+- **Do not weaken human auth.** Cookie JWT (`AUTH_SECRET`) and agent bearer (`CRM_AGENT_TOKEN`) are separate.
+
+### Tests
+Auth rejection, payload validation, suggestion insert shape, MCP initialize/list, and repo-sync planning live under `tests/agent-*.test.ts` and `tests/github-sync-repos.test.ts`.
 
 ## When Editing Existing Features
 - If touching contact profile editing, preserve blur autosave behavior.

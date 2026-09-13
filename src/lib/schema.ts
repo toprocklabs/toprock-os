@@ -282,7 +282,7 @@ export const suggestions = pgTable(
   "suggestions",
   {
     id: serial("id").primaryKey(),
-    kind: text("kind").notNull(), // 'new_contact' | 'new_edge' | 'log_activity' | 'stage_change'
+    kind: text("kind").notNull(), // 'new_company' | 'new_contact' | 'new_edge' | 'log_activity' | 'stage_change' | 'new_deal' | 'update_deal' | 'update_account'
     title: text("title").notNull(), // short human summary for the inbox row
     payload: jsonb("payload").notNull(),
     confidence: integer("confidence").default(0).notNull(), // 0-100 from triage
@@ -301,7 +301,7 @@ export const suggestions = pgTable(
 // honest, debuggable, and budget-bounded.
 export const agentRuns = pgTable("agent_runs", {
   id: serial("id").primaryKey(),
-  loop: text("loop").notNull(), // 'ingest_drive' | 'ingest_gmail' | 'daily_brief' | 'sourcing'
+  loop: text("loop").notNull(), // 'ingest_drive' | 'ingest_gmail' | 'daily_brief' | 'sourcing' | 'pm_agent' | 'sync_repos'
   model: text("model"),
   status: text("status").default("running").notNull(), // running | ok | error | halted_budget
   tokensIn: integer("tokens_in").default(0).notNull(),

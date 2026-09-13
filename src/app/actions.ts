@@ -12,6 +12,8 @@ import { normalizeCompanyIndustry } from "@/lib/company-industry-utils";
 import { scrapeCompanyWebsite } from "@/lib/enrich";
 import { geocodeAddress } from "@/lib/geocode";
 import { sourceNearbyBusinesses } from "@/lib/source-nearby";
+import { applySuggestion, markSuggestionResolved } from "@/lib/agent/apply-suggestion";
+import { SuggestionValidationError } from "@/lib/agent/suggestion-kinds";
 import { activities, agentRuns, companies, contacts, deals, payments, placeEnrichment, proposals, relationships, salesTasks, stripeSubscriptions, suggestions, users } from "@/lib/schema";
 import { generatePin } from "@/lib/proposal/pin";
 import { parsePricingTotals } from "@/lib/proposal/markdown";
@@ -728,19 +730,8 @@ const suggestionActionSchema = z.object({
   suggestionId: z.coerce.number().int().positive(),
 });
 
-type NewCompanySuggestionPayload = {
-  name?: string;
-  address?: string;
-  lat?: number;
-  lng?: number;
-  nearCompanyId?: number;
-  nearCompanyName?: string;
-  category?: string;
-};
-
-// Promote a sourced "nearby business" suggestion into a real new_lead account,
-// and auto-link it to the customer it was found near (so the warm-path graph
-// immediately knows the new lead sits in a proven plaza).
+// Apply a pending inbox suggestion to core tables. Kind-specific writes live in
+// `@/lib/agent/apply-suggestion` so the PM agent API and this button share one path.
 export const approveSuggestion = defineAction({
   schema: suggestionActionSchema,
   input: (formData) => ({ suggestionId: formData.get("suggestionId") }),
@@ -754,70 +745,24 @@ export const approveSuggestion = defineAction({
     return;
   }
 
-  const payload = (suggestion.payload ?? {}) as NewCompanySuggestionPayload;
-  const name = payload.name?.trim();
-  if (!name) {
-    await setFlashToast("Suggestion is missing a business name.");
-    return;
+  try {
+    const result = await applySuggestion(db, suggestion);
+    await markSuggestionResolved(db, suggestionId, "approved");
+    revalidatePath("/inbox");
+    revalidatePath("/map");
+    for (const path of result.revalidate) {
+      revalidatePath(path);
+    }
+    await setFlashToast(result.message);
+  } catch (error) {
+    const message =
+      error instanceof SuggestionValidationError
+        ? error.issues.join(" ")
+        : error instanceof Error
+          ? error.message
+          : "Could not apply suggestion.";
+    await setFlashToast(message);
   }
-
-  // Don't create a duplicate if the user already added this account by hand.
-  const existing = await db.query.companies.findFirst({
-    where: eq(companies.name, name),
-  });
-
-  let companyId = existing?.id ?? null;
-  if (!companyId) {
-    // The OSM category (e.g. "beauty") is not a CRM industry — only keep it if
-    // it maps to a real one, otherwise leave industry unset for the user to fill.
-    const normalized = normalizeCompanyIndustry(payload.category);
-    const industry =
-      normalized && (companyIndustries as readonly string[]).includes(normalized) ? normalized : null;
-    const inserted = await db
-      .insert(companies)
-      .values({
-        name,
-        stage: "new_lead",
-        industry,
-        address: payload.address ?? null,
-        lat: payload.lat ?? null,
-        lng: payload.lng ?? null,
-      })
-      .returning({ id: companies.id });
-    companyId = inserted[0].id;
-  }
-
-  // Auto-wire the colocated edge back to the customer it was sourced near.
-  if (payload.nearCompanyId && companyId !== payload.nearCompanyId) {
-    const [fromId, toId] =
-      companyId < payload.nearCompanyId
-        ? [companyId, payload.nearCompanyId]
-        : [payload.nearCompanyId, companyId];
-    await db
-      .insert(relationships)
-      .values({
-        fromType: "company",
-        fromId,
-        toType: "company",
-        toId,
-        edgeType: "colocated_with",
-        strength: 80,
-        evidence: suggestion.evidence ?? `Sourced near ${payload.nearCompanyName ?? "a customer"}`,
-        source: "agent",
-      })
-      .onConflictDoNothing();
-  }
-
-  await db
-    .update(suggestions)
-    .set({ status: "approved", resolvedAt: new Date() })
-    .where(eq(suggestions.id, suggestionId));
-
-  revalidatePath("/inbox");
-  revalidatePath("/map");
-  revalidatePath("/accounts");
-  revalidatePath("/");
-  await setFlashToast(`Added ${name} as a new lead`);
   },
 });
 
