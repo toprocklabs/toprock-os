@@ -90,6 +90,27 @@
         <td><a href="005-github-project-activity/plan.html">plan</a></td>
         <td class="note">Mirror per-account repo push activity into Postgres and surface it as a sortable "Last push" column on /accounts. Phases 1–2 + orphan view shipped; scheduled sync and webhook outstanding.</td>
       </tr>
+      <tr>
+        <td>006</td>
+        <td><a href="006-mcp-read-api/plan.html">Read-only MCP endpoint</a></td>
+        <td><span class="status s-superseded">Superseded</span></td>
+        <td><a href="006-mcp-read-api/plan.html">plan</a></td>
+        <td class="note">Read-only MCP design for an external agent. Overtaken by PR #4, which shipped a different MCP at the same route &mdash; see <a href="008-agent-mcp-hardening/plan.html">008</a>. Its reasoning (why MCP, why never <code>run_sql</code>) still governs.</td>
+      </tr>
+      <tr>
+        <td>007</td>
+        <td><a href="007-private-deployment/plan.html">Private deployment &amp; data migration</a></td>
+        <td><span class="status s-accepted">Accepted</span></td>
+        <td><a href="007-private-deployment/plan.html">plan</a></td>
+        <td class="note">Host on Vercel for the agent's sake while the CRM itself 404s to the internet: only /api/mcp, /api/agent/* and the client SOW pages answer. Plus old &rarr; new Neon data migration.</td>
+      </tr>
+      <tr>
+        <td>008</td>
+        <td><a href="008-agent-mcp-hardening/plan.html">Agent MCP hardening</a></td>
+        <td><span class="status s-accepted">Accepted</span></td>
+        <td><a href="008-agent-mcp-hardening/plan.html">plan</a></td>
+        <td class="note">The MCP that actually shipped (PR #4) plus the ported security layer: SELECT-only role for the ten read tools, a tested read/write classification, and a surface verifier.</td>
+      </tr>
     </tbody>
   </table>
 

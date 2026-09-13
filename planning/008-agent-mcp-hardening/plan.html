@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<!--
+  planning/008-agent-mcp-hardening/plan.html — the HOW.
+  The agent MCP that actually shipped (PR #4), plus the security layer ported
+  onto it from the superseded plan 006.
+  Keep section order stable for clean diffs.
+-->
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Plan · Agent MCP hardening</title>
+<style>
+  :root{--bg:#fbfaf8;--ink:#1c1b1a;--muted:#6b6660;--line:#e6e2db;--accent:#3a5a78;--soft:#eef2f6;--codebg:#f3f1ec;
+    --proposed:#9a7b2f;--proposed-bg:#f6efdd;--accepted:#3f6b4a;--accepted-bg:#e9f1ea;
+    --t0:#3f6b4a;--t0-bg:#e9f1ea;--t1:#3a5a78;--t1-bg:#e8eef4;--t2:#9a7b2f;--t2-bg:#f6efdd;--t3:#9a4b3f;--t3-bg:#f5e8e5;}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font:16px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+  main{max-width:820px;margin:0 auto;padding:44px 28px 80px}
+  .top{display:flex;justify-content:space-between;align-items:center;font-size:13px;color:var(--muted)}
+  .top a{color:var(--accent);text-decoration:none}
+  .status{display:inline-block;font-size:11px;font-weight:700;letter-spacing:.03em;padding:3px 11px;border-radius:20px;text-transform:capitalize}
+  .s-proposed{color:var(--proposed);background:var(--proposed-bg)}
+  .s-accepted{color:var(--accepted);background:var(--accepted-bg)}
+  .kicker{font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--accent);font-weight:600;margin-top:18px}
+  h1{font-size:30px;margin:6px 0 6px;letter-spacing:-.01em}
+  .lede{color:var(--muted);font-size:17px;margin:0 0 8px}
+  h2{font-size:14px;letter-spacing:.05em;text-transform:uppercase;color:var(--accent);
+    border-top:1px solid var(--line);padding-top:22px;margin:32px 0 10px}
+  h3{font-size:15.5px;margin:18px 0 6px}
+  p{margin:8px 0}ul,ol{margin:8px 0;padding-left:22px}li{margin:5px 0}
+  code{background:var(--codebg);padding:1.5px 5px;border-radius:4px;font-size:13.5px;font-family:"SF Mono",Consolas,Menlo,monospace}
+  pre{background:var(--codebg);border:1px solid var(--line);border-radius:8px;padding:12px 14px;overflow-x:auto;font-size:13px;line-height:1.5}
+  pre code{background:none;padding:0}
+  table{border-collapse:collapse;width:100%;font-size:14px;margin:10px 0}
+  th,td{text-align:left;padding:8px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{font-size:12px;text-transform:uppercase;color:var(--muted);background:var(--soft)}
+  .callout{background:#fff;border:1px solid var(--line);border-left:3px solid var(--accent);border-radius:8px;padding:12px 16px;margin:14px 0}
+  .callout.warn{border-left-color:var(--t3)}
+  .callout.good{border-left-color:var(--t0)}
+  .phase{background:#fff;border:1px solid var(--line);border-radius:10px;padding:16px 18px;margin:14px 0}
+  .phase h3{margin:0 0 6px;color:var(--accent)}
+  .phase .tag{font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
+  .tier{display:inline-block;font-size:10.5px;font-weight:700;letter-spacing:.04em;padding:2px 8px;border-radius:20px;text-transform:uppercase;white-space:nowrap}
+  .tier-0{color:var(--t0);background:var(--t0-bg)}
+  .tier-3{color:var(--t3);background:var(--t3-bg)}
+  .mono{font-family:"SF Mono",Consolas,Menlo,monospace;font-size:12.5px}
+  .yes{color:var(--t0);font-weight:700}
+  .no{color:var(--t3);font-weight:700}
+  figure{margin:16px 0;background:#fff;border:1px solid var(--line);border-radius:10px;padding:16px}
+  figcaption{font-size:12.5px;color:var(--muted);margin-top:10px;text-align:center}
+  .toc{background:#fff;border:1px solid var(--line);border-radius:10px;padding:14px 18px;margin:18px 0}
+  .toc ol{margin:6px 0;padding-left:20px;font-size:14px;columns:2;column-gap:28px}
+  .toc a{color:var(--accent);text-decoration:none}
+  .toc a:hover{text-decoration:underline}
+  footer{margin-top:36px;color:var(--muted);font-size:12.5px;border-top:1px solid var(--line);padding-top:16px}
+  @media (max-width:640px){main{padding:28px 16px 60px}.toc ol{columns:1}}
+</style>
+</head>
+<body>
+<main>
+  <div class="top">
+    <a href="../index.html">← Planning index</a>
+    <span class="status s-accepted">Accepted</span>
+  </div>
+
+  <div class="kicker">Plan · Feature 008</div>
+  <h1>Agent MCP hardening</h1>
+  <p class="lede">Two MCP implementations were built in parallel and collided on the same route. This records which one survived, why, and the security layer ported onto it: a SELECT-only database role for reads, a classification that makes the read/write boundary testable, and a verifier that checks the whole surface.</p>
+
+  <div class="toc">
+    <strong style="font-size:13px">Contents</strong>
+    <ol>
+      <li><a href="#collision">The collision</a></li>
+      <li><a href="#decision">The decision, and why</a></li>
+      <li><a href="#shipped">What shipped in PR #4</a></li>
+      <li><a href="#split">The read/write connection split</a></li>
+      <li><a href="#role">The SELECT-only role</a></li>
+      <li><a href="#classification">Classification as a test</a></li>
+      <li><a href="#verifier">The verifier</a></li>
+      <li><a href="#residual">Residual risks</a></li>
+      <li><a href="#verify">Verification</a></li>
+    </ol>
+  </div>
+
+  <h2 id="collision">The collision</h2>
+  <p>Two agents built an MCP endpoint for this CRM at the same time, neither aware of the other, both claiming <code>src/app/api/mcp/route.ts</code>.</p>
+  <table>
+    <thead><tr><th></th><th>PR #4 (<code>cursor/agent-mcp-api-911a</code>)</th><th>Plan 006 (local, never committed)</th></tr></thead>
+    <tbody>
+      <tr><td>Tools</td><td>12 — 10 read, 2 write</td><td>11, all read</td></tr>
+      <tr><td>Writes</td><td>Yes, into the <code>suggestions</code> queue for <code>/inbox</code> approval, plus an auto-apply policy</td><td>None</td></tr>
+      <tr><td>Auth</td><td><code>CRM_AGENT_TOKEN</code>, timing-safe, 503 when unset</td><td><code>MCP_BEARER_TOKEN</code>, same principle</td></tr>
+      <tr><td>DB access</td><td><code>getDb()</code> for everything</td><td>Separate SELECT-only role</td></tr>
+      <tr><td>Read depth</td><td>Flat lists and gets</td><td>Deal history, merged account timeline, staleness</td></tr>
+      <tr><td>Public surface</td><td>None</td><td><code>proxy.ts</code> wall</td></tr>
+      <tr><td>Status</td><td><strong>Merged to <code>main</code>, deployed</strong></td><td>Uncommitted working tree</td></tr>
+    </tbody>
+  </table>
+
+  <h2 id="decision">The decision, and why</h2>
+  <p><strong>PR #4 stays; plan 006's security layer is ported onto it.</strong> Three reasons:</p>
+  <ol>
+    <li><strong>It was already merged and deployed.</strong> Reverting reviewed, tested, working code to substitute an uncommitted alternative is churn, not progress.</li>
+    <li><strong>It does something plan 006 deliberately refused to do, and the refusal was wrong for this product.</strong> Plan 006 scoped writes out of v1. But the CRM already has a human-in-the-loop queue — <code>suggestions</code> + <code>/inbox</code> — built exactly so an agent can propose and a human can approve. PR #4 uses it. "The agent keeps the CRM current from meetings and git activity" is the actual goal; read-only was a means, not the end.</li>
+    <li><strong>What plan 006 had that PR #4 lacked was orthogonal.</strong> The role, the connection split, and the wall are not tied to a tool catalog. They port cleanly onto someone else's tools.</li>
+  </ol>
+  <div class="callout">
+    <p style="margin:0">What carries over unchanged from plan 006: <strong>no generic <code>run_sql</code> tool, ever.</strong> PR #4 agrees — its twelve tools are named and hand-written. A Discord message is untrusted input, and named tools keep "this cannot touch <code>users</code>" reviewable rather than merely promised.</p>
+  </div>
+
+  <h2 id="shipped">What shipped in PR #4</h2>
+  <ul>
+    <li>Streamable HTTP MCP at <code>POST /api/mcp</code>, with <code>GET</code> returning server info and <code>DELETE</code> ending a session. CORS and <code>Mcp-Session-Id</code> handling included.</li>
+    <li>Ten read tools: <code>list_accounts</code>, <code>get_account</code>, <code>list_contacts</code>, <code>get_contact</code>, <code>list_opportunities</code>, <code>get_opportunity</code>, <code>list_tasks</code>, <code>list_activities</code>, <code>list_suggestions</code>, <code>list_project_repos</code>.</li>
+    <li>Two write tools: <code>propose_suggestion</code> (inserts a pending <code>suggestions</code> row plus an <code>agent_runs</code> row — never a core table) and <code>sync_project_repos</code> (refreshes the GitHub mirror).</li>
+    <li>An auto-apply policy that is <strong>off by default</strong>: requires <code>CRM_AGENT_AUTO_APPLY=true</code>, confidence ≥ 95, and an allowlist defaulting to <code>log_activity</code> alone. <code>stage_change</code>, <code>new_deal</code>, <code>update_deal</code> and <code>update_account</code> can never auto-apply.</li>
+    <li>REST companions at <code>GET /api/agent/health</code> and <code>POST /api/agent/sync-repos</code>, same bearer.</li>
+    <li>Tests for auth rejection, payload validation, suggestion shape, MCP initialize/list, and repo-sync planning.</li>
+  </ul>
+  <p>Reviewed and found sound: the token comparison is timing-safe and fails closed when unset, and no tool references <code>users</code>, <code>proposals</code>, or the signed-PDF tables.</p>
+
+  <h2 id="split">The read/write connection split</h2>
+  <p>PR #4 ran every tool on one read/write connection. Now the ten read tools run on a connection whose database role physically cannot write:</p>
+<pre><code>export async function dispatchAgentTool(name, rawArgs, db: Db, readDb: Db = db) {
+  const readOnly = READ_ONLY_TOOLS.has(name) ? readDb : db;
+  …
+}</code></pre>
+  <p>The route supplies <code>getReadOnlyDb()</code>, which reads <code>MCP_DATABASE_URL</code>. Writes — <code>propose_suggestion</code>, <code>sync_project_repos</code>, and the <code>agent_runs</code> bookkeeping around every call — keep the read/write connection and stay gated by <code>/inbox</code>.</p>
+  <p>The default parameter (<code>readDb: Db = db</code>) means existing callers and tests keep working unchanged, and a missing <code>MCP_DATABASE_URL</code> degrades to the old behavior with a warning rather than breaking the endpoint.</p>
+
+  <h2 id="role">The SELECT-only role</h2>
+  <p>Seven tables, because that is what the read tools actually touch — verified by reading their queries, not assumed:</p>
+<pre><code>companies  contacts  deals  activities  sales_tasks  suggestions  project_repos</code></pre>
+  <p><code>agent_runs</code> is deliberately absent: it is only ever written, and writes never use this role. Not granted at all: <code>users</code>, <code>proposals</code>, <code>proposal_documents</code>, <code>payments</code>, <code>stripe_subscriptions</code>, <code>relationships</code>, <code>place_enrichment</code>.</p>
+<pre><code>npm run mcp:role              # provision, then audit
+npm run mcp:role -- --audit-only   # "is it still read-only?", months from now</code></pre>
+  <p>The script proves the result instead of asserting it, by asking Postgres what the role can do to <strong>every</strong> table in the schema via <code>has_table_privilege</code> — a catalog read, so the audit itself can never write. Any unexpected privilege prints <code>&lt;-- UNEXPECTED</code> and exits non-zero.</p>
+  <p><strong>No <code>ALTER DEFAULT PRIVILEGES</code>.</strong> Granting SELECT on future tables would hand the agent every table added later — the opposite of an allowlist. A new table must be added to <code>READABLE_TABLES</code> on purpose.</p>
+
+  <h2 id="classification">Classification as a test</h2>
+  <p>A split is only as good as its maintenance. <code>tests/agent-tool-classification.test.ts</code> fails the build when:</p>
+  <ul>
+    <li>a catalog tool is in neither the read-only set nor the known write list — so a new tool cannot inherit a connection by accident;</li>
+    <li>a write tool is marked read-only;</li>
+    <li><code>READ_ONLY_TOOLS</code> names a tool that no longer exists;</li>
+    <li>the write surface grows beyond the two approved tools — a third is a real decision needing its own review, not a refactor.</li>
+  </ul>
+  <p>If someone does misclassify a write tool as read-only, it fails loudly against a role that cannot perform the write, rather than silently gaining privileges. That is the safe direction for the mistake to fall.</p>
+
+  <h2 id="verifier">The verifier</h2>
+  <p><code>npm run mcp:verify -- --url &lt;host&gt;/api/mcp --token &lt;token&gt;</code> checks the deployed surface end to end: that <code>/</code>, <code>/login</code>, <code>/accounts</code>, <code>/proposals</code>, <code>/payments</code> and <code>/inbox</code> all 404 (the plan 007 wall), that missing and wrong tokens are both rejected, that <code>tools/list</code> advertises exactly the twelve known tools and nothing outside them, that a <code>run_sql</code> call is refused, that an over-large <code>limit</code> is clamped, and that a real read answers. Every request it makes is a read.</p>
+
+  <h2 id="residual">Residual risks</h2>
+  <table>
+    <thead><tr><th>Risk</th><th>Standing</th></tr></thead>
+    <tbody>
+      <tr><td>One token covers both read and write tools</td><td>Accepted for now. A leaked <code>CRM_AGENT_TOKEN</code> can propose suggestions, which a human must still approve in <code>/inbox</code>. Splitting into two tokens is the next hardening step if the agent's audience ever widens.</td></tr>
+      <tr><td>Auto-apply could be switched on carelessly</td><td>Off by default, needs three env vars aligned, and the dangerous kinds are hard-blocked in code rather than by configuration.</td></tr>
+      <tr><td>Prompt injection through activity notes</td><td>Unchanged from plan 006: notes are attacker-influenceable text. The mitigation is that the write path leads to a review queue, not to the database.</td></tr>
+      <tr><td><code>sync_project_repos</code> calls GitHub with <code>GITHUB_TOKEN</code></td><td>Read-only PAT, mirror-only writes into <code>project_repos</code>. Noted rather than mitigated further.</td></tr>
+    </tbody>
+  </table>
+
+  <h2 id="verify">Verification</h2>
+  <ol>
+    <li><code>npm run lint</code>, <code>npm test</code> (111 tests), <code>npm run build</code>.</li>
+    <li><code>npm run build &amp;&amp; npm start</code> → CRM paths 404; <code>/api/mcp</code> and <code>/api/agent/*</code> answer 503 (token unset) rather than 404; <code>/p/&lt;slug&gt;</code> renders. <strong>Confirmed.</strong></li>
+    <li><code>npm run mcp:role</code> against the new database, then <code>--audit-only</code> shows SELECT on exactly seven tables and write access nowhere. <em>Pending a database.</em></li>
+    <li><code>npm run mcp:verify</code> against the deployment passes every check. <em>Pending a deployment with credentials.</em></li>
+  </ol>
+
+  <footer>
+    Plan 008 · Agent MCP hardening · Toprock CRM.
+    Supersedes <a href="../006-mcp-read-api/plan.html">006 read-only MCP endpoint</a>.
+    Depends on <a href="../007-private-deployment/plan.html">007 private deployment</a>.
+  </footer>
+</main>
+</body>
+</html>

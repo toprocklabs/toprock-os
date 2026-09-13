@@ -8,7 +8,7 @@ import {
   parseJsonBody,
 } from "@/lib/agent/mcp";
 import { AgentToolError, dispatchAgentTool } from "@/lib/agent/tools";
-import { getDb } from "@/lib/db";
+import { getDb, getReadOnlyDb } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -68,11 +68,14 @@ export async function POST(request: Request) {
   }
 
   const db = getDb();
+  // Read tools run on the SELECT-only role; writes stay on the read/write
+  // connection and remain gated by the /inbox queue (plan 008).
+  const readDb = getReadOnlyDb();
   const result = await handleMcpBody(parsed.value, async (name, args) => {
     if (!db) {
       throw new AgentToolError("DATABASE_URL is not set.");
     }
-    return dispatchAgentTool(name, args, db);
+    return dispatchAgentTool(name, args, db, readDb ?? db);
   });
   if (result.kind === "ack") {
     return emptyWithCors({ status: 202, headers: sessionHeaders(request) });

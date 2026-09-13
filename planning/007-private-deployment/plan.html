@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<!--
+  planning/007-private-deployment/plan.html — the HOW.
+  Deploy the CRM to Vercel with almost no public surface: the agent's MCP
+  endpoint and the client SOW pages answer; the CRM itself 404s and exists only
+  when run locally. Plus the old -> new Neon data migration.
+  Keep section order stable for clean diffs.
+-->
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Plan · Private deployment</title>
+<style>
+  :root{--bg:#fbfaf8;--ink:#1c1b1a;--muted:#6b6660;--line:#e6e2db;--accent:#3a5a78;--soft:#eef2f6;--codebg:#f3f1ec;
+    --proposed:#9a7b2f;--proposed-bg:#f6efdd;--accepted:#3f6b4a;--accepted-bg:#e9f1ea;
+    --t0:#3f6b4a;--t0-bg:#e9f1ea;--t1:#3a5a78;--t1-bg:#e8eef4;--t2:#9a7b2f;--t2-bg:#f6efdd;--t3:#9a4b3f;--t3-bg:#f5e8e5;}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font:16px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+  main{max-width:820px;margin:0 auto;padding:44px 28px 80px}
+  .top{display:flex;justify-content:space-between;align-items:center;font-size:13px;color:var(--muted)}
+  .top a{color:var(--accent);text-decoration:none}
+  .status{display:inline-block;font-size:11px;font-weight:700;letter-spacing:.03em;padding:3px 11px;border-radius:20px;text-transform:capitalize}
+  .s-proposed{color:var(--proposed);background:var(--proposed-bg)}
+  .s-accepted{color:var(--accepted);background:var(--accepted-bg)}
+  .kicker{font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--accent);font-weight:600;margin-top:18px}
+  h1{font-size:30px;margin:6px 0 6px;letter-spacing:-.01em}
+  .lede{color:var(--muted);font-size:17px;margin:0 0 8px}
+  h2{font-size:14px;letter-spacing:.05em;text-transform:uppercase;color:var(--accent);
+    border-top:1px solid var(--line);padding-top:22px;margin:32px 0 10px}
+  h3{font-size:15.5px;margin:18px 0 6px}
+  p{margin:8px 0}ul,ol{margin:8px 0;padding-left:22px}li{margin:5px 0}
+  code{background:var(--codebg);padding:1.5px 5px;border-radius:4px;font-size:13.5px;font-family:"SF Mono",Consolas,Menlo,monospace}
+  pre{background:var(--codebg);border:1px solid var(--line);border-radius:8px;padding:12px 14px;overflow-x:auto;font-size:13px;line-height:1.5}
+  pre code{background:none;padding:0}
+  table{border-collapse:collapse;width:100%;font-size:14px;margin:10px 0}
+  th,td{text-align:left;padding:8px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{font-size:12px;text-transform:uppercase;color:var(--muted);background:var(--soft)}
+  .callout{background:#fff;border:1px solid var(--line);border-left:3px solid var(--accent);border-radius:8px;padding:12px 16px;margin:14px 0}
+  .callout.warn{border-left-color:var(--t3)}
+  .callout.good{border-left-color:var(--t0)}
+  .phase{background:#fff;border:1px solid var(--line);border-radius:10px;padding:16px 18px;margin:14px 0}
+  .phase h3{margin:0 0 6px;color:var(--accent)}
+  .phase .tag{font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
+  .tier{display:inline-block;font-size:10.5px;font-weight:700;letter-spacing:.04em;padding:2px 8px;border-radius:20px;text-transform:uppercase;white-space:nowrap}
+  .tier-0{color:var(--t0);background:var(--t0-bg)}
+  .tier-3{color:var(--t3);background:var(--t3-bg)}
+  .mono{font-family:"SF Mono",Consolas,Menlo,monospace;font-size:12.5px}
+  .yes{color:var(--t0);font-weight:700}
+  .no{color:var(--t3);font-weight:700}
+  figure{margin:16px 0;background:#fff;border:1px solid var(--line);border-radius:10px;padding:16px}
+  figcaption{font-size:12.5px;color:var(--muted);margin-top:10px;text-align:center}
+  .toc{background:#fff;border:1px solid var(--line);border-radius:10px;padding:14px 18px;margin:18px 0}
+  .toc ol{margin:6px 0;padding-left:20px;font-size:14px;columns:2;column-gap:28px}
+  .toc a{color:var(--accent);text-decoration:none}
+  .toc a:hover{text-decoration:underline}
+  footer{margin-top:36px;color:var(--muted);font-size:12.5px;border-top:1px solid var(--line);padding-top:16px}
+  @media (max-width:640px){main{padding:28px 16px 60px}.toc ol{columns:1}}
+</style>
+</head>
+<body>
+<main>
+  <div class="top">
+    <a href="../index.html">← Planning index</a>
+    <span class="status s-accepted">Accepted</span>
+  </div>
+
+  <div class="kicker">Plan · Feature 007</div>
+  <h1>Private deployment &amp; data migration</h1>
+  <p class="lede">Put the CRM on Vercel so the agent can reach it, while the CRM itself has no public face: three paths answer from the internet, everything else returns 404. The UI exists only when you run it locally against the same database.</p>
+
+  <div class="toc">
+    <strong style="font-size:13px">Contents</strong>
+    <ol>
+      <li><a href="#why">The requirement, honestly stated</a></li>
+      <li><a href="#surface">The surface allowlist</a></li>
+      <li><a href="#mechanism">Mechanism: proxy.ts</a></li>
+      <li><a href="#failclosed">The fail-closed rule</a></li>
+      <li><a href="#attacker">What a stranger can see</a></li>
+      <li><a href="#humans">How you and your brother get in</a></li>
+      <li><a href="#migration">Data migration</a></li>
+      <li><a href="#files">Files</a></li>
+      <li><a href="#phases">Phases</a></li>
+      <li><a href="#risks">Risks</a></li>
+      <li><a href="#scope">Out of scope</a></li>
+      <li><a href="#verify">Verification</a></li>
+    </ol>
+  </div>
+
+  <h2 id="why">The requirement, honestly stated</h2>
+  <p>The ask was "hosted on Vercel, connected to Neon, but not accessible on the web except locally." Two halves of that cannot both hold literally: <strong>Grok Bot runs in Discord's cloud and cannot reach <code>localhost</code></strong>. Something has to be internet-reachable or the agent has nothing to call.</p>
+  <p>What <em>can</em> hold, and what this plan builds: the only things reachable from the internet are the machine endpoint the agent needs and the client-facing SOW pages. The CRM — dashboard, accounts, contacts, opportunities, tasks, activities, payments, proposals admin, and <em>the login page itself</em> — returns 404 to the entire internet. It is served only by <code>npm run dev</code> on your machine and your brother's, against the same Neon database.</p>
+  <div class="callout good">
+    <p style="margin:0">The strongest property here is that <strong>there is no authentication surface in production at all</strong>. No login form to brute-force, no session cookie to steal, no password reset to abuse. An attacker who learns the deployment URL finds a bearer-gated JSON endpoint and some PIN-gated proposal pages. There is nothing else to attack, because nothing else answers.</p>
+  </div>
+
+  <h2 id="surface">The surface allowlist</h2>
+  <table>
+    <thead><tr><th>Path</th><th>Internet</th><th>Why</th></tr></thead>
+    <tbody>
+      <tr><td><code>POST /api/mcp</code></td><td class="yes">200</td><td>The agent. Bearer-gated Streamable HTTP MCP, 12 tools (plan 008).</td></tr>
+      <tr><td><code>/api/agent/health</code>, <code>/api/agent/sync-repos</code></td><td class="yes">200</td><td>The agent's REST companions, same <code>CRM_AGENT_TOKEN</code>.</td></tr>
+      <tr><td><code>/p/&lt;slug&gt;</code>, <code>/p/&lt;slug&gt;/terms</code>, <code>POST /p/&lt;slug&gt;/sign</code></td><td class="yes">200</td><td>Clients view and sign SOWs. Already PIN-gated per proposal.</td></tr>
+      <tr><td><code>/_next/static/*</code>, <code>/_next/image*</code>, <code>/favicon.ico</code></td><td class="yes">200</td><td>Without these the proposal page renders unstyled. See the note below on why this leaks nothing.</td></tr>
+      <tr><td><code>/</code>, <code>/login</code>, <code>/accounts</code>, <code>/contacts</code>, <code>/opportunities</code>, <code>/tasks</code>, <code>/activities</code>, <code>/inbox</code>, <code>/map</code>, <code>/payments</code>, <code>/proposals</code>, <code>/customers</code></td><td class="no">404</td><td>The CRM. Local only.</td></tr>
+      <tr><td><code>/proposals/&lt;id&gt;/pdf</code></td><td class="no">404</td><td>Signed agreements. Local only.</td></tr>
+      <tr><td>anything else</td><td class="no">404</td><td>Default deny — new routes are private until deliberately allowlisted.</td></tr>
+    </tbody>
+  </table>
+
+  <div class="callout">
+    <p style="margin:0 0 8px"><strong>Why allowing <code>/_next/static</code> costs nothing.</strong> Those files are compiled client-side JavaScript and CSS. Someone who guessed a chunk filename would get the browser code for, say, the accounts table — which is already published at <a href="https://github.com/toprocklabs/toprock-os">github.com/toprocklabs/toprock-os</a>, a public repository. No CRM <em>data</em> lives in a static chunk.</p>
+    <p style="margin:0"><strong>Data requests are blocked because they carry the page's own path.</strong> React Server Component payloads are fetched as <code>GET /accounts?_rsc=…</code> and server actions POST to the page path. Both are matched on <code>/accounts</code> and 404 like any other request to that route, so no rendered row ever crosses the boundary.</p>
+  </div>
+
+  <h2 id="mechanism">Mechanism: proxy.ts</h2>
+  <p><strong>Next.js 16 renamed <code>middleware.ts</code> to <code>proxy.ts</code></strong> (<code>node_modules/next/dist/docs/01-app/03-api-reference/03-file-conventions/proxy.md</code>) and it now defaults to the Node.js runtime rather than Edge. The file exports one function, runs before any route renders, and is the earliest place we can refuse a request.</p>
+  <p>The decision itself lives in a pure function so it can be unit-tested without booting Next:</p>
+<pre><code>// src/lib/public-surface.ts
+export function isPubliclyAllowed(pathname: string): boolean
+
+// src/proxy.ts
+export function proxy(request: NextRequest) {
+  if (isLockedDown() &amp;&amp; !isPubliclyAllowed(request.nextUrl.pathname)) {
+    return new NextResponse(null, { status: 404 });
+  }
+  return NextResponse.next();
+}</code></pre>
+  <p>A bare <code>404</code> with no body is deliberate: it is indistinguishable from a route that was never built, so the response does not confirm a CRM is there. <code>403</code> would advertise that something exists and is being withheld.</p>
+
+  <h2 id="failclosed">The fail-closed rule</h2>
+  <p>Lockdown is on whenever <code>NODE_ENV === "production"</code>, unless <code>CRM_PUBLIC_SURFACE=all</code> is explicitly set.</p>
+  <table>
+    <thead><tr><th>Context</th><th>Locked?</th></tr></thead>
+    <tbody>
+      <tr><td><code>npm run dev</code> on your machine</td><td>No — <code>NODE_ENV=development</code>. Full CRM, zero configuration.</td></tr>
+      <tr><td>Vercel production</td><td><strong>Yes.</strong></td></tr>
+      <tr><td>Vercel preview deploys</td><td><strong>Yes</strong> — and they have no database and no MCP token either (plan 006 sets those on production only).</td></tr>
+      <tr><td><code>npm run build &amp;&amp; npm start</code> locally</td><td>Yes, unless you set <code>CRM_PUBLIC_SURFACE=all</code>. Testing a production build of the full UI is an opt-in.</td></tr>
+    </tbody>
+  </table>
+  <p>Keying off <code>NODE_ENV</code> rather than <code>VERCEL=1</code> is the safer default: a deployment anywhere else — a VPS, a container, someone else's Vercel account — is locked too, instead of quietly failing open because one vendor's variable was missing.</p>
+
+  <h2 id="attacker">What a stranger can see</h2>
+  <ol>
+    <li>Hits <code>https://&lt;host&gt;/</code> → <code>404</code>. No redirect to a login, no branding, no framework error page.</li>
+    <li>Tries <code>/login</code>, <code>/admin</code>, <code>/accounts</code>, <code>/api/health</code> → <code>404</code>.</li>
+    <li>Finds <code>/api/mcp</code> (it is in the public repo) → <code>401</code> without the bearer, and the bearer is 43 random characters that exist only in Vercel's environment.</li>
+    <li>Finds a proposal slug → the PIN gate, unchanged from what clients already use.</li>
+  </ol>
+  <p>The residual exposure is the same as before this plan: a leaked bearer reaches 11 read-only tools over five tables, and a leaked proposal slug plus PIN reaches one client's SOW.</p>
+
+  <h2 id="humans">How you and your brother get in</h2>
+  <p>Both of you run it locally — this was the explicit choice, and it is what makes the 404 wall possible. Setup per machine: clone the repo, <code>npm install</code>, put <code>DATABASE_URL</code> and <code>AUTH_SECRET</code> in <code>.env.local</code>, <code>npm run dev</code>. Both machines talk to the same Neon database, so you see the same data and each other's edits.</p>
+  <div class="callout warn">
+    <p style="margin:0"><strong>The cost of this choice, stated plainly.</strong> No phone access, no laptop-without-the-repo access, and adding a third person means walking them through a local setup and handing them a database credential. If that friction bites, the fix is not to open the wall — it is to add exactly one gated route, or put the UI behind Vercel Authentication with team seats. Supersede this plan rather than setting <code>CRM_PUBLIC_SURFACE=all</code> in production, which would expose everything at once.</p>
+  </div>
+
+  <h2 id="migration">Data migration</h2>
+  <p>A new Neon project starts empty. The existing CRM data lives in the original Neon project, whose connection string is not on this machine — finding it in the Neon console is the one prerequisite nothing else can substitute for.</p>
+  <p><code>scripts/migrate-db.mjs</code> does the copy and then checks its own work:</p>
+<pre><code>npm run db:migrate -- --from "$OLD_URL" --to "$NEW_URL" --dry-run
+npm run db:migrate -- --from "$OLD_URL" --to "$NEW_URL"</code></pre>
+  <ul>
+    <li><strong>Dry run first, always.</strong> It connects to both, prints every table with its row count side by side, and says exactly what would be copied.</li>
+    <li><strong>Refuses a non-empty target</strong> unless <code>--force</code>. Restoring into a database that already has rows is how you get duplicate accounts and broken sequences.</li>
+    <li><strong>Warns on a pooled endpoint.</strong> Neon's <code>-pooler</code> host is for serverless request traffic; a dump or restore should use the direct endpoint or it can drop mid-transfer.</li>
+    <li>Copy is <code>pg_dump --no-owner --no-acl -Fc</code> piped into <code>pg_restore</code>, so roles and grants from the old project do not follow the data into the new one — the MCP role is created fresh there by <code>npm run mcp:role</code>.</li>
+    <li><strong>Verifies afterwards</strong> by re-counting every table on both sides and printing a per-table diff. A mismatch exits non-zero. Sequences come across in the dump, so the next <code>INSERT</code> continues from the right id rather than colliding.</li>
+  </ul>
+  <p>The old database is only ever read. Nothing in this process writes to or drops it, so it stays as a fallback until you choose to delete it.</p>
+
+  <h2 id="files">Files</h2>
+  <table>
+    <thead><tr><th>Path</th><th>Role</th></tr></thead>
+    <tbody>
+      <tr><td><code>src/proxy.ts</code></td><td>Next 16 request interceptor. Ten lines; the decision is delegated.</td></tr>
+      <tr><td><code>src/lib/public-surface.ts</code></td><td>The allowlist as a pure function, plus <code>isLockedDown()</code>.</td></tr>
+      <tr><td><code>scripts/migrate-db.mjs</code></td><td>Dump, restore, verify row counts.</td></tr>
+      <tr><td><code>tests/public-surface.test.ts</code></td><td>Every allowed path, every blocked path, and the traversal-ish near-misses.</td></tr>
+    </tbody>
+  </table>
+
+  <h2 id="phases">Phases</h2>
+  <div class="phase">
+    <div class="tag">Phase 1 — shipped</div>
+    <h3>Lockdown + migration tooling</h3>
+    <p><code>proxy.ts</code>, the allowlist, its tests, and <code>scripts/migrate-db.mjs</code>. Verifiable locally against a production build.</p>
+  </div>
+  <div class="phase">
+    <div class="tag">Phase 2 — blocked on the old connection string</div>
+    <h3>New Neon project, schema, data</h3>
+    <p>Create the project, <code>npm run db:push</code>, dry-run the migration, run it, confirm the row-count diff is clean.</p>
+  </div>
+  <div class="phase">
+    <div class="tag">Phase 3 — deploy</div>
+    <h3>Vercel env, first deploy, MCP role</h3>
+    <p><code>DATABASE_URL</code> (new project) into <code>toprock-labs/crm</code> production, then <code>npm run mcp:role</code> and <code>MCP_DATABASE_URL</code>, then deploy and verify the wall from an unauthenticated client.</p>
+  </div>
+
+  <h2 id="risks">Risks</h2>
+  <table>
+    <thead><tr><th>Risk</th><th>Mitigation</th></tr></thead>
+    <tbody>
+      <tr><td>A new route is added later and is silently public</td><td>Default deny — a new path is private until someone adds it to the allowlist on purpose.</td></tr>
+      <tr><td>Someone sets <code>CRM_PUBLIC_SURFACE=all</code> in production to "fix" an access problem</td><td>It exposes the whole CRM behind nothing but the login form. Called out in AGENTS.md; the real fix is a superseding plan.</td></tr>
+      <tr><td>The proposal page breaks because an asset path is blocked</td><td>Covered by tests and by loading a real <code>/p/&lt;slug&gt;</code> against a production build before deploying.</td></tr>
+      <tr><td>Migration silently drops rows</td><td>Per-table row-count diff after restore; non-zero exit on any mismatch. Old database untouched and kept.</td></tr>
+      <tr><td>Both machines editing the same database with no locking</td><td>Pre-existing single-tenant behavior, unchanged by this plan. Last write wins.</td></tr>
+    </tbody>
+  </table>
+
+  <h2 id="scope">Out of scope</h2>
+  <ul>
+    <li>Any web-accessible CRM UI, gated or otherwise.</li>
+    <li>Vercel Authentication / Password Protection — they would block the agent and the client SOW pages alike.</li>
+    <li>IP allowlisting (Vercel Enterprise only).</li>
+    <li>Multi-tenant authorization. Everyone with the database sees everything, as today.</li>
+    <li>Deleting the old Neon project.</li>
+  </ul>
+
+  <h2 id="verify">Verification</h2>
+  <ol>
+    <li><code>npm run lint</code>, <code>npm test</code>, <code>npm run build</code>.</li>
+    <li>Locally: <code>npm run dev</code> serves the whole CRM, unchanged.</li>
+    <li>Locally: <code>npm run build &amp;&amp; npm start</code> → <code>/accounts</code> is 404, <code>/p/&lt;slug&gt;</code> renders <em>with styling</em>, <code>/api/mcp</code> answers.</li>
+    <li>Against the deployment, from a browser with no cookies: <code>/</code>, <code>/login</code>, <code>/accounts</code>, <code>/proposals</code> all 404.</li>
+    <li><code>npm run mcp:verify -- --url https://&lt;host&gt;/api/mcp --token &lt;token&gt;</code> passes all nine checks.</li>
+    <li>Row-count diff after migration is clean, and the CRM shows the migrated data locally.</li>
+  </ol>
+
+  <footer>
+    Plan 007 · Private deployment &amp; data migration · Toprock CRM.
+    Builds on <a href="../006-mcp-read-api/plan.html">006 read-only MCP endpoint</a>.
+  </footer>
+</main>
+</body>
+</html>
