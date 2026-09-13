@@ -1,4 +1,4 @@
-import { and, desc, eq, ilike, or, type SQL } from "drizzle-orm";
+import { and, asc, desc, eq, gte, ilike, inArray, notInArray, or, sql, type SQL } from "drizzle-orm";
 import type { Db } from "@/lib/define-action";
 import { applySuggestion, markSuggestionResolved } from "@/lib/agent/apply-suggestion";
 import { shouldAutoApply } from "@/lib/agent/policy";
@@ -423,6 +423,110 @@ async function listProjectReposTool(db: Db, args: Record<string, unknown>) {
     .limit(limit);
 }
 
+const CLOSED_DEAL_STAGES = ["won", "lost"] as const;
+
+/**
+ * The whole story on one account, which `list_activities` cannot tell.
+ *
+ * That tool filters on `activities.company_id`, so it misses activity logged
+ * against one of the account's opportunities or one of its people — rows whose
+ * company_id is null. Asking "what is happening with this client?" and getting
+ * a partial answer is worse than getting none, because it reads as complete.
+ */
+async function accountTimeline(db: Db, args: Record<string, unknown>) {
+  const companyId = requireId(args.accountId ?? args.companyId, "accountId");
+  const limit = clampLimit(args.limit, DEFAULT_ACTIVITY_LIMIT);
+
+  const dealIds = db.select({ id: deals.id }).from(deals).where(eq(deals.companyId, companyId));
+  const contactIds = db
+    .select({ id: contacts.id })
+    .from(contacts)
+    .where(eq(contacts.companyId, companyId));
+
+  const filters: SQL[] = [
+    or(
+      eq(activities.companyId, companyId),
+      inArray(activities.dealId, dealIds),
+      inArray(activities.contactId, contactIds),
+    ) as SQL,
+  ];
+
+  if (args.since != null) {
+    const since = String(args.since);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(since)) {
+      throw new AgentToolError("since must be a YYYY-MM-DD date.");
+    }
+    filters.push(gte(activities.occurredAt, new Date(`${since}T00:00:00.000Z`)));
+  }
+
+  return db
+    .select({
+      id: activities.id,
+      type: activities.type,
+      notes: activities.notes,
+      source: activities.source,
+      companyId: activities.companyId,
+      contactId: activities.contactId,
+      dealId: activities.dealId,
+      dealName: deals.name,
+      contactFirstName: contacts.firstName,
+      contactLastName: contacts.lastName,
+      occurredAt: activities.occurredAt,
+    })
+    .from(activities)
+    .leftJoin(deals, eq(activities.dealId, deals.id))
+    .leftJoin(contacts, eq(activities.contactId, contacts.id))
+    .where(and(...filters))
+    .orderBy(desc(activities.occurredAt))
+    .limit(limit);
+}
+
+/**
+ * Open opportunities ordered by how long they have been silent.
+ *
+ * "Who is stuck in negotiation?" is a question about staleness, and staleness
+ * is a fact about the *absence* of recent activity — which no flat list of
+ * deals or activities can express. The correlated subquery computes it per deal
+ * so the agent does not have to fetch a timeline for each one and subtract dates.
+ */
+async function listStalledOpportunities(db: Db, args: Record<string, unknown>) {
+  const limit = clampLimit(args.limit, DEFAULT_LIMIT);
+  const filters: SQL[] = [notInArray(deals.stage, [...CLOSED_DEAL_STAGES]) as SQL];
+
+  if (args.stage != null) {
+    filters.push(eq(deals.stage, String(args.stage) as (typeof deals.stage.enumValues)[number]));
+  }
+
+  const lastActivityAt = sql<
+    string | null
+  >`(select max(${activities.occurredAt}) from ${activities} where ${activities.dealId} = ${deals.id})`;
+
+  return db
+    .select({
+      id: deals.id,
+      name: deals.name,
+      stage: deals.stage,
+      valueCents: deals.valueCents,
+      ownerName: deals.ownerName,
+      nextStep: deals.nextStep,
+      nextStepDueDate: deals.nextStepDueDate,
+      expectedCloseDate: deals.expectedCloseDate,
+      companyId: deals.companyId,
+      companyName: companies.name,
+      lastActivityAt,
+      // Nulls first: a deal with no activity at all is the most stalled of all.
+      daysSinceLastActivity: sql<
+        number | null
+      >`case when ${lastActivityAt} is null then null
+             else floor(extract(epoch from (now() - ${lastActivityAt})) / 86400)::int end`,
+    })
+    .from(deals)
+    .leftJoin(companies, eq(deals.companyId, companies.id))
+    .where(and(...filters))
+    .orderBy(sql`${lastActivityAt} asc nulls first`, asc(deals.id))
+    .limit(limit);
+}
+
 async function proposeSuggestionTool(db: Db, args: Record<string, unknown>) {
   let parsed;
   try {
@@ -513,29 +617,65 @@ async function syncProjectReposTool(db: Db, args: Record<string, unknown>) {
   }
 }
 
-export async function dispatchAgentTool(name: string, rawArgs: unknown, db: Db) {
+/**
+ * Tools that only ever SELECT. These are dispatched against `readDb` — a
+ * connection whose Neon role is granted nothing but SELECT on the seven tables
+ * they touch (planning/008-agent-mcp-hardening). Everything else runs on the
+ * read/write connection and stays gated by the /inbox approval queue.
+ *
+ * Adding a tool here without confirming it is read-only would route a write
+ * through a role that cannot perform it, and the tool would fail loudly rather
+ * than silently gaining privileges — the safe direction for a mistake.
+ */
+export const READ_ONLY_TOOLS = new Set([
+  "list_accounts",
+  "get_account",
+  "list_contacts",
+  "get_contact",
+  "list_opportunities",
+  "get_opportunity",
+  "list_tasks",
+  "list_activities",
+  "list_suggestions",
+  "list_project_repos",
+  "account_timeline",
+  "list_stalled_opportunities",
+]);
+
+export async function dispatchAgentTool(
+  name: string,
+  rawArgs: unknown,
+  db: Db,
+  readDb: Db = db,
+) {
   const args = asArgs(rawArgs);
+  // Reads get the SELECT-only connection; writes keep the read/write one.
+  const readOnly = READ_ONLY_TOOLS.has(name) ? readDb : db;
   switch (name) {
     case "list_accounts":
-      return listAccounts(db, args);
+      return listAccounts(readOnly, args);
     case "get_account":
-      return getAccount(db, args);
+      return getAccount(readOnly, args);
     case "list_contacts":
-      return listContacts(db, args);
+      return listContacts(readOnly, args);
     case "get_contact":
-      return getContact(db, args);
+      return getContact(readOnly, args);
     case "list_opportunities":
-      return listOpportunities(db, args);
+      return listOpportunities(readOnly, args);
     case "get_opportunity":
-      return getOpportunity(db, args);
+      return getOpportunity(readOnly, args);
     case "list_tasks":
-      return listTasks(db, args);
+      return listTasks(readOnly, args);
     case "list_activities":
-      return listActivities(db, args);
+      return listActivities(readOnly, args);
     case "list_suggestions":
-      return listSuggestions(db, args);
+      return listSuggestions(readOnly, args);
     case "list_project_repos":
-      return listProjectReposTool(db, args);
+      return listProjectReposTool(readOnly, args);
+    case "account_timeline":
+      return accountTimeline(readOnly, args);
+    case "list_stalled_opportunities":
+      return listStalledOpportunities(readOnly, args);
     case "propose_suggestion":
       return proposeSuggestionTool(db, args);
     case "sync_project_repos":

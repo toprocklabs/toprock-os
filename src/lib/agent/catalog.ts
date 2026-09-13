@@ -9,6 +9,8 @@ export type AgentToolName =
   | "list_activities"
   | "list_suggestions"
   | "list_project_repos"
+  | "account_timeline"
+  | "list_stalled_opportunities"
   | "propose_suggestion"
   | "sync_project_repos";
 
@@ -167,6 +169,37 @@ export const MCP_TOOLS: McpToolDefinition[] = [
         includeInternal: { type: "boolean", description: "Include internal tooling repos. Default true." },
         limit: limitProperty,
       },
+    },
+  },
+  {
+    name: "account_timeline",
+    description:
+      "One merged timeline for an account: activity logged on the account itself, on any of its opportunities, and on any of its contacts, newest first. Use this instead of list_activities when asked what is happening with a client — list_activities only matches activity tagged directly to the account and will miss the rest.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        accountId: { type: "integer", minimum: 1 },
+        since: { type: "string", description: "Only activity on or after this date (YYYY-MM-DD)." },
+        limit: limitProperty,
+      },
+      required: ["accountId"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "list_stalled_opportunities",
+    description:
+      "Open opportunities (not won, not lost) ordered by how long they have been silent, with days since the last logged activity. Answers \"who is stuck in negotiation?\" — deals with no activity at all sort first.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        stage: {
+          type: "string",
+          enum: ["lead", "qualified", "proposal", "negotiation"],
+        },
+        limit: limitProperty,
+      },
+      additionalProperties: false,
     },
   },
   {

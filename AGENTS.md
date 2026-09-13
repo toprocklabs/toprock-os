@@ -43,11 +43,15 @@ Check `node_modules/next/dist/docs/` when changing framework behavior.
 - `src/lib/github/sync-repos.ts` shared GitHub org → `project_repos` reconcile (CLI + agent tool)
 - `src/app/api/mcp/` Streamable HTTP MCP endpoint
 - `src/app/api/agent/` small REST companions (`/health`, `/sync-repos`)
+- `src/proxy.ts` public-surface wall (Next 16 renamed `middleware.ts` → `proxy.ts`); allowlist in `src/lib/public-surface.ts`
 - `src/components/` shared UI helpers (`crm-shell`, autosave fields, call link, collapsible form section)
 - `drizzle/` generated migrations
 - `tests/` `node:test` suites for pure logic — run with `npm test`
 - `scripts/sync-repos.mjs` GitHub org → `project_repos` mirror (`npm run sync:repos [-- --dry-run]`)
 - `scripts/map-repos.mjs` links mirrored repos to accounts (`node scripts/map-repos.mjs [--apply]`)
+- `scripts/setup-mcp-role.mjs` provisions + audits the SELECT-only Neon role the agent's read tools use (`npm run mcp:role [-- --dry-run|--audit-only]`)
+- `scripts/verify-mcp.mjs` end-to-end check of a deployed `/api/mcp` **and** the public-surface wall (`npm run mcp:verify -- --url <url> --token <token>`)
+- `scripts/migrate-db.mjs` copies a whole database into a fresh one and verifies row counts (`npm run db:migrate -- --from <url> --to <url> [--dry-run]`)
 - `scripts/create-user.mjs` CLI user upsert helper
 - `scripts/run-tests.mjs` test discovery shim (Node 20's runner doesn't glob `.ts`)
 
@@ -185,8 +189,24 @@ Money fields (`valueCents` / `implementationCostCents`) are rejected unless `evi
 - **Never contact clients.** This API does not send mail, place calls, or message anyone.
 - **Do not weaken human auth.** Cookie JWT (`AUTH_SECRET`) and agent bearer (`CRM_AGENT_TOKEN`) are separate.
 
+### Read/write connection split (plan 008)
+- The ten read tools are dispatched against `getReadOnlyDb()` (`MCP_DATABASE_URL`), a Neon role granted **only `SELECT`** on the seven tables they touch: `companies`, `contacts`, `deals`, `activities`, `sales_tasks`, `suggestions`, `project_repos`. `propose_suggestion`, `sync_project_repos`, and `agent_runs` bookkeeping keep the read/write connection.
+- `READ_ONLY_TOOLS` in `src/lib/agent/tools.ts` is the classification. `tests/agent-tool-classification.test.ts` fails the build if a catalog tool is unclassified, if a write tool is marked read-only, or if the write surface grows beyond the two approved tools — so adding a tool forces a deliberate decision rather than inheriting a connection by accident.
+- Provision the role with `npm run mcp:role` (admin `DATABASE_URL` required). It audits the role against **every** table in the schema and fails if it can read anything outside the seven or write anything at all. Re-runnable as `npm run mcp:role -- --audit-only`.
+- **No `ALTER DEFAULT PRIVILEGES`** — a new table must be granted deliberately in `READABLE_TABLES`, never inherited.
+- `MCP_DATABASE_URL` falls back to `DATABASE_URL` with a warning, so the endpoint works before the role exists. The role is a deploy step, not an optional one.
+
 ### Tests
-Auth rejection, payload validation, suggestion insert shape, MCP initialize/list, and repo-sync planning live under `tests/agent-*.test.ts` and `tests/github-sync-repos.test.ts`.
+Auth rejection, payload validation, suggestion insert shape, MCP initialize/list, and repo-sync planning live under `tests/agent-*.test.ts` and `tests/github-sync-repos.test.ts`. Tool classification lives in `tests/agent-tool-classification.test.ts`.
+
+## Private deployment (plan 007)
+- **The CRM is a local-only app that happens to be deployed.** It is hosted for one reason: the PM agent runs in the cloud and cannot reach `localhost`. Austin and his brother both run it with `npm run dev` against the shared Neon database; there is no web UI for anyone.
+- `src/proxy.ts` returns a bodiless **404** in production for every path not in the allowlist in `src/lib/public-surface.ts`. Publicly reachable: `POST /api/mcp`, `/api/agent/*`, `/p/*` (client SOWs), `/_next/*`, `/favicon.ico`, `/robots.txt`. Everything else — **including `/login`** — 404s, so the deployment has no human authentication surface at all.
+- 404 not 403, deliberately: a 403 confirms something exists and is being withheld.
+- **Default deny.** A route added later is private until someone allowlists it on purpose — add it to `src/lib/public-surface.ts` *and* `tests/public-surface.test.ts`.
+- Lockdown keys off `NODE_ENV === "production"` (not Vercel's own flag, so a deploy anywhere else is locked too) and lifts only for the exact opt-out `CRM_PUBLIC_SURFACE=all`. `npm run dev` is unaffected and needs no configuration.
+- **Never set `CRM_PUBLIC_SURFACE=all` in a deployed environment**, and do not turn on Vercel Deployment Protection instead — it blocks the agent and client SOW pages equally. If someone needs web access, add one gated route and supersede plan 007 rather than flipping either switch.
+- Allowing `/_next/*` leaks nothing: those bundles build from a public repo and contain no CRM rows. Server-rendered data is fetched at the page's own path (`/accounts?_rsc=…`) and is blocked with the page — verified.
 
 ## When Editing Existing Features
 - If touching contact profile editing, preserve blur autosave behavior.
@@ -213,11 +233,14 @@ Auth rejection, payload validation, suggestion insert shape, MCP initialize/list
 - If account stage touched: verify `/accounts` create flow and `/accounts/[id]` stage updates
 - If opportunity workflow touched: verify `/opportunities/[id]` save + stage updates + timeline logging
 - If proposals touched: verify `/proposals` create/edit, the public `/p/[slug]` PIN gate + render, and (for signing changes) an end-to-end test signature against a throwaway proposal row
+- If `proxy.ts` or the public surface touched: `npm run build && npm start`, then confirm `/accounts` and `/login` return 404 while `/p/<slug>` renders **with styling** and `/api/mcp` answers (401/503, not 404)
+- If the agent API touched: `npm run mcp:verify -- --url <deployed>/api/mcp --token <token>` must pass every check, and `npm run mcp:role -- --audit-only` must still report write access nowhere
 - If project repos touched: run `npm run sync:repos -- --dry-run`, then confirm `/accounts` sorts by Last push in both directions with unlinked accounts pinned last
 
 ## Safety Notes
 - Do not store plaintext passwords; always hash with bcrypt (`bcryptjs`).
 - Keep `AUTH_SECRET` and DB credentials in `.env.local` only.
+- Keep `CRM_AGENT_TOKEN` and `MCP_DATABASE_URL` out of the repo (host env only), and keep the production MCP URL and call examples out of `README.md`.
 - Preserve existing redirects from `/customers` to `/accounts` unless explicitly removing backward compatibility.
 
 ## Known Issues / Tech Debt

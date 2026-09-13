@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<!--
+  planning/006-mcp-read-api/plan.html — the HOW.
+  A read-only MCP endpoint at /api/mcp so an external agent (Grok Bot in Discord)
+  can answer questions against live CRM data through named tools, never raw SQL.
+  Keep section order stable for clean diffs.
+-->
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Plan · Read-only MCP endpoint</title>
+<style>
+  :root{--bg:#fbfaf8;--ink:#1c1b1a;--muted:#6b6660;--line:#e6e2db;--accent:#3a5a78;--soft:#eef2f6;--codebg:#f3f1ec;
+    --proposed:#9a7b2f;--proposed-bg:#f6efdd;--accepted:#3f6b4a;--accepted-bg:#e9f1ea;
+    --t0:#3f6b4a;--t0-bg:#e9f1ea;--t1:#3a5a78;--t1-bg:#e8eef4;--t2:#9a7b2f;--t2-bg:#f6efdd;--t3:#9a4b3f;--t3-bg:#f5e8e5;}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font:16px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+  main{max-width:820px;margin:0 auto;padding:44px 28px 80px}
+  .top{display:flex;justify-content:space-between;align-items:center;font-size:13px;color:var(--muted)}
+  .top a{color:var(--accent);text-decoration:none}
+  .status{display:inline-block;font-size:11px;font-weight:700;letter-spacing:.03em;padding:3px 11px;border-radius:20px;text-transform:capitalize}
+  .s-proposed{color:var(--proposed);background:var(--proposed-bg)}
+  .s-superseded{color:#8a8580;background:#efece8}
+  .s-accepted{color:var(--accepted);background:var(--accepted-bg)}
+  .kicker{font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--accent);font-weight:600;margin-top:18px}
+  h1{font-size:30px;margin:6px 0 6px;letter-spacing:-.01em}
+  .lede{color:var(--muted);font-size:17px;margin:0 0 8px}
+  h2{font-size:14px;letter-spacing:.05em;text-transform:uppercase;color:var(--accent);
+    border-top:1px solid var(--line);padding-top:22px;margin:32px 0 10px}
+  h3{font-size:15.5px;margin:18px 0 6px}
+  p{margin:8px 0}ul,ol{margin:8px 0;padding-left:22px}li{margin:5px 0}
+  code{background:var(--codebg);padding:1.5px 5px;border-radius:4px;font-size:13.5px;font-family:"SF Mono",Consolas,Menlo,monospace}
+  pre{background:var(--codebg);border:1px solid var(--line);border-radius:8px;padding:12px 14px;overflow-x:auto;font-size:13px;line-height:1.5}
+  pre code{background:none;padding:0}
+  table{border-collapse:collapse;width:100%;font-size:14px;margin:10px 0}
+  th,td{text-align:left;padding:8px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{font-size:12px;text-transform:uppercase;color:var(--muted);background:var(--soft)}
+  .callout{background:#fff;border:1px solid var(--line);border-left:3px solid var(--accent);border-radius:8px;padding:12px 16px;margin:14px 0}
+  .callout.warn{border-left-color:var(--t3)}
+  .callout.good{border-left-color:var(--t0)}
+  .phase{background:#fff;border:1px solid var(--line);border-radius:10px;padding:16px 18px;margin:14px 0}
+  .phase h3{margin:0 0 6px;color:var(--accent)}
+  .phase .tag{font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
+  .tier{display:inline-block;font-size:10.5px;font-weight:700;letter-spacing:.04em;padding:2px 8px;border-radius:20px;text-transform:uppercase;white-space:nowrap}
+  .tier-0{color:var(--t0);background:var(--t0-bg)}
+  .tier-1{color:var(--t1);background:var(--t1-bg)}
+  .tier-2{color:var(--t2);background:var(--t2-bg)}
+  .tier-3{color:var(--t3);background:var(--t3-bg)}
+  .mono{font-family:"SF Mono",Consolas,Menlo,monospace;font-size:12.5px}
+  figure{margin:16px 0;background:#fff;border:1px solid var(--line);border-radius:10px;padding:16px}
+  figcaption{font-size:12.5px;color:var(--muted);margin-top:10px;text-align:center}
+  .toc{background:#fff;border:1px solid var(--line);border-radius:10px;padding:14px 18px;margin:18px 0}
+  .toc ol{margin:6px 0;padding-left:20px;font-size:14px;columns:2;column-gap:28px}
+  .toc a{color:var(--accent);text-decoration:none}
+  .toc a:hover{text-decoration:underline}
+  footer{margin-top:36px;color:var(--muted);font-size:12.5px;border-top:1px solid var(--line);padding-top:16px}
+  @media (max-width:640px){main{padding:28px 16px 60px}.toc ol{columns:1}}
+</style>
+</head>
+<body>
+<main>
+  <div class="top">
+    <a href="../index.html">← Planning index</a>
+    <span class="status s-superseded">Superseded</span>
+  </div>
+
+  <div class="kicker">Plan · Feature 006</div>
+  <h1>Read-only MCP endpoint for external agents</h1>
+  <div class="callout warn" style="margin-top:14px">
+    <p style="margin:0"><strong>Superseded by <a href="../008-agent-mcp-hardening/plan.html">plan 008</a>.</strong> While this was being built, a second agent independently shipped a different MCP at the same path (<code>75fd50a</code>, PR #4) — Streamable HTTP, twelve tools, and a <em>write</em> path through the <code>/inbox</code> suggestion queue. That implementation was merged to <code>main</code> and deployed first. Rather than revert working, reviewed code, the decision was to keep it and port this plan's security layer onto it: the SELECT-only Neon role, the connection split, and the public-surface wall. Plan 008 records what actually exists. The reasoning below — especially <a href="#options">why MCP over a collection export or a raw connection string</a>, and <a href="#injection">why no <code>run_sql</code></a> — still holds and still governs.</p>
+  </div>
+
+  <p class="lede">Let Grok Bot answer "what's the last thing we heard from Al?" and "who's stuck in negotiation?" from live CRM data — through eleven named, read-only tools at <code>/api/mcp</code>, never a database door and never a raw-SQL tool.</p>
+
+  <div class="toc">
+    <strong style="font-size:13px">Contents</strong>
+    <ol>
+      <li><a href="#why">The ask, and why MCP</a></li>
+      <li><a href="#options">Options considered</a></li>
+      <li><a href="#arch">Architecture</a></li>
+      <li><a href="#protocol">Protocol surface</a></li>
+      <li><a href="#auth">Auth &amp; fail-closed</a></li>
+      <li><a href="#tools">Tool catalog</a></li>
+      <li><a href="#exposure">Data exposure &amp; redaction</a></li>
+      <li><a href="#injection">Prompt injection &amp; blast radius</a></li>
+      <li><a href="#files">Files</a></li>
+      <li><a href="#phases">Phases</a></li>
+      <li><a href="#register">Registration</a></li>
+      <li><a href="#risks">Risks</a></li>
+      <li><a href="#scope">Out of scope</a></li>
+      <li><a href="#verify">Verification</a></li>
+    </ol>
+  </div>
+
+  <h2 id="why">The ask, and why MCP</h2>
+  <p>Grok Bot lives in Discord and gets asked CRM questions in natural language. Today it has no access to this database, so every answer is either a guess or a request for a human to go look. The questions that actually get asked are relational and filtered — <em>"last thing from Al"</em>, <em>"which deals are stuck in negotiation"</em>, <em>"is GT Cabinets current on payments"</em> — not keyword search over a document dump.</p>
+  <p>That shape has one honest answer: give the agent <strong>named tools that encode the joins in code</strong>, backed by live Postgres reads. Not a search index over stale exports, and not a connection string.</p>
+
+  <h2 id="options">Options considered</h2>
+  <table>
+    <thead><tr><th>Option</th><th>Freshness</th><th>Permission scope</th><th>Blast radius if leaked</th><th>Verdict</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><strong>1. MCP endpoint in the CRM</strong></td>
+        <td>Live — Neon queried per tool call</td>
+        <td>Per-tool allowlist + SELECT-only role + bearer</td>
+        <td>URL alone useless; a leaked bearer still reaches only eleven read tools; no <code>users</code>, no credentials</td>
+        <td><span class="tier tier-0">Chosen</span></td>
+      </tr>
+      <tr>
+        <td>2. xAI Collection export</td>
+        <td>Stale — hours/days without a sync job</td>
+        <td>Soft: whatever went into the files</td>
+        <td>The export <em>is</em> a broad CRM snapshot</td>
+        <td><span class="tier tier-3">No</span> — search over dumps can't do "stuck in negotiation"; high ongoing maintenance (export jobs, schema drift, re-upload)</td>
+      </tr>
+      <tr>
+        <td>3. Direct Neon connection string</td>
+        <td>Live</td>
+        <td>Role can be SELECT-only, but the agent holds a database door</td>
+        <td>A wide credential in agent secrets; hard to audit</td>
+        <td><span class="tier tier-3">No</span> — low code, high ops risk; fights the "no <code>run_sql</code>" rule</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="callout warn">
+    <p style="margin:0"><strong>Why not a generic <code>run_sql</code> tool.</strong> It is the tempting shortcut and the wrong one for v1. A Discord message is untrusted input; a model holding <code>run_sql</code> can be steered by it. You also cannot <em>prove</em> such a tool never touches <code>users</code> — the audit trail becomes "whatever SQL the model invented." Named tools move that proof from runtime to code review: the eleven queries below are the complete set of statements this endpoint can ever execute.</p>
+  </div>
+
+  <h2 id="arch">Architecture</h2>
+  <figure>
+<pre><code>Discord message
+      │
+      ▼
+  Grok Bot ──── MCP client (Streamable HTTP, Bearer header)
+      │
+      ▼
+POST /api/mcp                     ← public URL, treated as public
+  1. isAuthorized()               ← timing-safe bearer compare; 503 if unconfigured
+  2. parseJsonRpc()               ← pure; rejects batches, bad envelopes
+  3. dispatch                     ← initialize | ping | tools/list | tools/call
+      │
+      ▼
+  mcpTools[name]                  ← allowlist lookup; unknown name → isError
+      │  zod-parsed args (limits clamped, no interpolation)
+      ▼
+  getReadOnlyDb()                 ← MCP_DATABASE_URL (SELECT-only Neon role)
+      │                              falls back to DATABASE_URL
+      ▼
+  Drizzle SELECT, explicit columns only
+      │
+      ▼
+  { content:[{type:"text",…}], structuredContent:{…} }</code></pre>
+    <figcaption>Four independent gates — bearer, tool allowlist, column allowlist, database role — each of which fails closed on its own.</figcaption>
+  </figure>
+
+  <h3>Why a hand-rolled JSON-RPC handler</h3>
+  <p>The endpoint is stateless: no sessions, no server-initiated messages, no subscriptions. The three methods that matter (<code>initialize</code>, <code>tools/list</code>, <code>tools/call</code>) plus <code>ping</code> are roughly 120 lines of envelope handling. Pulling in the MCP SDK to do that would add a dependency, a transport abstraction, and an SSE code path this route will never use, to a project that has deliberately stayed dependency-light. The protocol layer is pure and unit-tested instead.</p>
+
+  <h2 id="protocol">Protocol surface</h2>
+  <table>
+    <thead><tr><th>Method</th><th>Behavior</th></tr></thead>
+    <tbody>
+      <tr><td><code>initialize</code></td><td>Echoes the client's <code>protocolVersion</code> when it is one we know, else our default (<code>2025-06-18</code>). Advertises <code>capabilities.tools</code> only.</td></tr>
+      <tr><td><code>notifications/*</code></td><td>No <code>id</code> → no response body. Returns <code>202 Accepted</code>, per the JSON-RPC notification contract.</td></tr>
+      <tr><td><code>ping</code></td><td><code>{}</code>. Cheap liveness for the connector UI.</td></tr>
+      <tr><td><code>tools/list</code></td><td>All eleven tools with JSON Schema generated from their zod schemas via <code>z.toJSONSchema()</code> — one definition, no schema drift between validation and advertisement.</td></tr>
+      <tr><td><code>tools/call</code></td><td>Allowlist lookup by name. Argument validation failures and unknown tools come back as <code>isError: true</code> tool results (the model can correct itself), not JSON-RPC errors (which abort the turn).</td></tr>
+      <tr><td>anything else</td><td><code>-32601 Method not found</code>.</td></tr>
+      <tr><td><code>GET</code> / <code>DELETE</code></td><td><code>405</code> with <code>Allow: POST</code>. No SSE stream to open; compliant clients fall back to POST-only.</td></tr>
+    </tbody>
+  </table>
+  <p>Responses are always <code>application/json</code>. The spec lets a server answer a POST with either JSON or an SSE stream; with no server-initiated messages to deliver, JSON is the honest choice.</p>
+
+  <h2 id="auth">Auth &amp; fail-closed</h2>
+  <ul>
+    <li><code>Authorization: Bearer &lt;MCP_BEARER_TOKEN&gt;</code>, compared with <code>timingSafeEqual</code> over SHA-256 digests so the compare is constant-time and length-independent.</li>
+    <li><strong>Unset <code>MCP_BEARER_TOKEN</code> disables the endpoint entirely</strong> — <code>503</code>, no database touched. A fresh clone, a preview deploy, or a forgotten env var yields a dead route rather than an open one. This is the single most important line in the feature.</li>
+    <li>A token shorter than 32 characters is refused at startup of the request, same as <code>AUTH_SECRET</code>.</li>
+    <li><code>401</code> carries <code>WWW-Authenticate: Bearer</code> and nothing else — no hint about whether the token was absent, malformed, or wrong.</li>
+    <li>The token is <em>not</em> reused from <code>AUTH_SECRET</code> or any admin secret. Separate audience, separate rotation.</li>
+  </ul>
+  <div class="callout">
+    <p style="margin:0"><strong>Public repo, private secrets.</strong> Shipping <code>/api/mcp</code> in a public repository is fine — the design is the security, not the obscurity. What must never enter the repo: <code>DATABASE_URL</code>, <code>MCP_DATABASE_URL</code>, <code>MCP_BEARER_TOKEN</code>. The production URL and call examples stay out of <code>README.md</code> too; they live in Vercel and in the connector config, which cuts casual probing without pretending it is a control.</p>
+  </div>
+
+  <h3>The SELECT-only role</h3>
+  <p><code>MCP_DATABASE_URL</code> should point at a Neon role created like this. It is defence in depth: the tools contain no write statements, so this role exists to make a future mistake unable to become an incident.</p>
+<pre><code>npm run mcp:role              # provisions, then audits
+npm run mcp:role -- --dry-run # print the SQL, touch nothing</code></pre>
+  <p><code>scripts/setup-mcp-role.mjs</code> issues exactly this, against the admin <code>DATABASE_URL</code>:</p>
+<pre><code>CREATE ROLE crm_mcp_ro WITH LOGIN PASSWORD '…';
+GRANT CONNECT ON DATABASE neondb TO crm_mcp_ro;
+GRANT USAGE ON SCHEMA public TO crm_mcp_ro;
+GRANT SELECT ON public."companies" TO crm_mcp_ro;
+GRANT SELECT ON public."contacts"  TO crm_mcp_ro;
+GRANT SELECT ON public."deals"     TO crm_mcp_ro;
+GRANT SELECT ON public."activities" TO crm_mcp_ro;
+GRANT SELECT ON public."sales_tasks" TO crm_mcp_ro;
+-- never granted: users, proposals, proposal_documents, payments,
+-- stripe_subscriptions, suggestions, agent_runs, relationships,
+-- project_repos, place_enrichment</code></pre>
+
+  <div class="callout warn">
+    <p style="margin:0"><strong>Correction to the original draft: no <code>ALTER DEFAULT PRIVILEGES</code>.</strong> The first version of this plan ended with <code>ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES</code>, which would hand the MCP role read access to <em>every table added in the future</em> — the exact opposite of an allowlist. A later <code>api_keys</code> or <code>user_tokens</code> table would have become readable the moment it was created, silently. Grants are now enumerated per table, and adding one is a deliberate edit to <code>READABLE_TABLES</code> in the script.</p>
+  </div>
+
+  <p>The script then proves the result rather than asserting it, by asking Postgres what the role can actually do to <em>every</em> table in the schema — <code>has_table_privilege</code>, a catalog read, so the audit itself can never write:</p>
+<pre><code>  table                     select  insert  update  delete
+  ----------------------------------------------------------
+  activities                  yes     --      --      --
+  companies                   yes     --      --      --
+  contacts                    yes     --      --      --
+  deals                       yes     --      --      --
+  payments                    --      --      --      --
+  proposal_documents          --      --      --      --
+  proposals                   --      --      --      --
+  sales_tasks                 yes     --      --      --
+  users                       --      --      --      --
+  …</code></pre>
+  <p>Any unexpected privilege exits non-zero with <code>&lt;-- UNEXPECTED</code> against the row. Re-runnable at any time as <code>npm run mcp:role -- --audit-only</code>, which is the honest answer to "is it still read-only?" months from now.</p>
+  <p>If <code>MCP_DATABASE_URL</code> is absent the endpoint falls back to <code>DATABASE_URL</code>, so the feature works before the role exists — but then only the code-level guarantees apply. Creating the role is a deploy step, not an optional nicety.</p>
+
+  <h2 id="tools">Tool catalog</h2>
+  <p>Eleven tools. Every one is a <code>SELECT</code>. Every <code>limit</code> is clamped to 1–100 (default 20). Free-text arguments are only ever bound as parameters to <code>ilike</code> patterns.</p>
+  <table>
+    <thead><tr><th>Tool</th><th>Arguments</th><th>Answers</th></tr></thead>
+    <tbody>
+      <tr><td><code>search_companies</code></td><td><code>query?</code>, <code>stage?</code>, <code>limit?</code></td><td>"Do we have a record for Scuba Dive Utah?" Returns stage, industry, next step, open-deal count and MRR.</td></tr>
+      <tr><td><code>get_company</code></td><td><code>company_id</code> <em>or</em> <code>name</code></td><td>The account brief: fields, contacts, open deals, open tasks, last activity. One call instead of five.</td></tr>
+      <tr><td><code>search_contacts</code></td><td><code>query?</code>, <code>company_id?</code>, <code>limit?</code></td><td>"Who is Al?" — matches name, email, or title, with the account attached.</td></tr>
+      <tr><td><code>get_contact</code></td><td><code>contact_id</code></td><td>One person: details, their account, the deals they front.</td></tr>
+      <tr><td><code>search_deals</code></td><td><code>query?</code>, <code>stage?</code>, <code>company_id?</code>, <code>limit?</code></td><td>Opportunity lookup by name/stage/account.</td></tr>
+      <tr><td><code>get_deal</code></td><td><code>deal_id</code></td><td>One opportunity with account, primary contact, and open tasks.</td></tr>
+      <tr><td><code>get_deal_history</code></td><td><code>deal_id</code>, <code>limit?</code></td><td>The timeline on a deal, newest first — how it got where it is.</td></tr>
+      <tr><td><code>recent_activity_for_contact</code></td><td><code>contact_id</code>, <code>limit?</code>, <code>since?</code></td><td><strong>"What's the last thing from Al?"</strong></td></tr>
+      <tr><td><code>recent_activity_for_company</code></td><td><code>company_id</code>, <code>limit?</code>, <code>since?</code></td><td>Everything on the account <em>and</em> on its deals <em>and</em> on its contacts, merged into one timeline. The join that makes this worth a tool.</td></tr>
+      <tr><td><code>list_open_deals_by_stage</code></td><td><code>stage?</code>, <code>limit?</code></td><td><strong>"Who's stuck in negotiation?"</strong> Open = not <code>won</code>/<code>lost</code>. Includes per-stage counts and pipeline value, plus days since the last activity on each deal — the actual "stuck" signal.</td></tr>
+      <tr><td><code>search_sales_tasks</code></td><td><code>query?</code>, <code>status?</code>, <code>company_id?</code>, <code>due_before?</code>, <code>limit?</code></td><td>"What's overdue?"</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Output shape</h3>
+  <p>Each result is returned twice: as <code>structuredContent</code> (typed JSON, for clients that use it) and as a pretty-printed JSON block in <code>content[0].text</code> (for clients that only read text). Conventions inside that JSON:</p>
+  <ul>
+    <li>Money as both <code>value_cents</code> and a formatted <code>value</code> — models are bad at dividing by 100 and good at reading <code>$1,200.00</code>.</li>
+    <li>Dates as ISO-8601 strings; <code>days_since</code> computed server-side where staleness is the point.</li>
+    <li>Free text (<code>activities.notes</code>) truncated at 2,000 characters with an explicit <code>"…[truncated]"</code> marker, so one pasted email thread cannot blow the agent's context.</li>
+    <li><code>id</code> on every row, so the model can chain a search into a <code>get_*</code>.</li>
+  </ul>
+
+  <h2 id="exposure">Data exposure &amp; redaction</h2>
+  <table>
+    <thead><tr><th>Table</th><th>Exposed</th><th>Never selected</th></tr></thead>
+    <tbody>
+      <tr><td><code>companies</code></td><td>name, stage, industry, website, address, next step, dates</td><td><code>stripe_customer_id</code>, lat/lng, <code>plaza_key</code></td></tr>
+      <tr><td><code>contacts</code></td><td>name, title, email, phone, LinkedIn, account</td><td>—</td></tr>
+      <tr><td><code>deals</code></td><td>name, stage, value, next step, dates, owner</td><td>—</td></tr>
+      <tr><td><code>activities</code></td><td>type, notes (truncated), occurred_at, source</td><td><code>logged_by_user_id</code></td></tr>
+      <tr><td><code>sales_tasks</code></td><td>title, status, due date, assignee</td><td>—</td></tr>
+      <tr><td><code>users</code></td><td colspan="2"><strong>Nothing. No tool references this table.</strong></td></tr>
+      <tr><td><code>proposals</code>, <code>proposal_documents</code></td><td colspan="2"><strong>Nothing.</strong> Carries <code>pin</code> and signed PDFs — out of scope for v1 rather than partially redacted.</td></tr>
+      <tr><td><code>payments</code>, <code>stripe_subscriptions</code></td><td colspan="2"><strong>Nothing</strong> in v1. Revenue answers are a deliberate second conversation.</td></tr>
+    </tbody>
+  </table>
+  <p>Contact email and phone <em>are</em> exposed: they are the point of a CRM lookup, and the endpoint is bearer-gated to one internal agent. That is the one judgement call in the table above worth revisiting if the bot's audience widens beyond the team's Discord.</p>
+
+  <h2 id="injection">Prompt injection &amp; blast radius</h2>
+  <p>CRM notes are attacker-influenceable — a prospect can email text that ends up pasted into an activity. When Grok reads that note, it is reading untrusted input.</p>
+  <ul>
+    <li><strong>Read-only is the mitigation.</strong> A successful injection can make the bot say something wrong in Discord. It cannot make it write, delete, or reach a tool that does — none exists.</li>
+    <li>Tool descriptions state plainly that returned text is data, not instruction. That is a nudge, not a control; the control is the absent write path.</li>
+    <li>Every call is logged as one structured line (<code>tool</code>, <code>duration_ms</code>, <code>row_count</code>, outcome) to the Vercel log — auditable without a database write, which the read-only role could not perform anyway.</li>
+  </ul>
+
+  <h2 id="files">Files</h2>
+  <table>
+    <thead><tr><th>Path</th><th>Role</th></tr></thead>
+    <tbody>
+      <tr><td><code>src/app/api/mcp/route.ts</code></td><td>Thin transport: auth → parse → dispatch → envelope. No SQL.</td></tr>
+      <tr><td><code>src/lib/mcp/auth.ts</code></td><td><code>isAuthorized()</code>, timing-safe. Pure, tested.</td></tr>
+      <tr><td><code>src/lib/mcp/protocol.ts</code></td><td>JSON-RPC envelope parse/build, error codes. Pure, tested.</td></tr>
+      <tr><td><code>src/lib/mcp/shape.ts</code></td><td><code>clampLimit</code>, <code>truncate</code>, money/date formatting, <code>daysSince</code>. Pure, tested.</td></tr>
+      <tr><td><code>src/lib/mcp/tools.ts</code></td><td>The eleven tools: zod schema + description + handler. The allowlist <em>is</em> this object's keys.</td></tr>
+      <tr><td><code>src/lib/db.ts</code></td><td>Gains <code>getReadOnlyDb()</code> — separate cached client on <code>MCP_DATABASE_URL</code>.</td></tr>
+      <tr><td><code>scripts/setup-mcp-role.mjs</code></td><td>Provisions the SELECT-only role, then audits it against every table.</td></tr>
+      <tr><td><code>scripts/verify-mcp.mjs</code></td><td>Nine end-to-end checks against a deployed endpoint.</td></tr>
+      <tr><td><code>tests/mcp-protocol.test.ts</code></td><td>Envelopes, error codes, notifications.</td></tr>
+      <tr><td><code>tests/mcp-auth.test.ts</code></td><td>Fail-closed when unconfigured, rejection of wrong/short/absent tokens.</td></tr>
+      <tr><td><code>tests/mcp-shape.test.ts</code></td><td>Limit clamping, truncation marker, formatting.</td></tr>
+    </tbody>
+  </table>
+
+  <h2 id="phases">Phases</h2>
+  <div class="phase">
+    <div class="tag">Phase 1 — shipped in this change</div>
+    <h3>Endpoint, auth, eleven tools, tests</h3>
+    <p>Everything above except the Neon role and the connector registration, both of which are configuration rather than code. Works locally against <code>DATABASE_URL</code> the moment <code>MCP_BEARER_TOKEN</code> is set.</p>
+  </div>
+  <div class="phase">
+    <div class="tag">Phase 2 — deploy · <strong>blocked</strong></div>
+    <h3>SELECT-only role + Vercel env + connector install</h3>
+    <p>Tooling is ready — <code>npm run mcp:role</code> and <code>npm run mcp:verify</code> — but the endpoint cannot go live yet, and the reason is not this feature:</p>
+    <ul>
+      <li><strong>The CRM is not deployed.</strong> No Vercel project links to this repository. The one named <code>crm</code> has no environment variables and its only production deployment errored; the account's other 35 projects are client sites. An MCP endpoint on <code>localhost</code> is unreachable from Discord, so a deployment has to exist before there is a URL to register.</li>
+      <li><strong>No database credentials are reachable from this checkout</strong> — no <code>.env.local</code>, and the Vercel project holds none — so the Neon role cannot be provisioned from here.</li>
+    </ul>
+    <p>Neither blocks the other work: the endpoint, its tools, and both scripts are complete and verified as far as they can be without a deployment and a database.</p>
+  </div>
+  <div class="phase">
+    <div class="tag">Phase 3 — later, only if asked</div>
+    <h3>Revenue tools, then writes</h3>
+    <p>Payments/subscription tools are additive and low-risk. <strong>Writes are not an extension of this plan</strong> — they need separate tools, a second role with scoped <code>INSERT</code>/<code>UPDATE</code>, per-user or short-lived tokens, and human-in-the-loop via the existing <code>suggestions</code> queue. Do not widen the v1 bearer into write access; supersede this plan instead.</p>
+  </div>
+
+  <h2 id="register">Registration</h2>
+  <p>Remote MCP connector, Streamable HTTP, bearer header. Placeholders on purpose — the real values live in Vercel and in the bot's secret store, never here.</p>
+<pre><code>{
+  "type": "streamable_http",
+  "url": "https://&lt;crm-host&gt;/api/mcp",
+  "headers": { "Authorization": "Bearer &lt;MCP_BEARER_TOKEN&gt;" }
+}</code></pre>
+  <p>Smoke test before wiring the bot:</p>
+<pre><code>curl -s -X POST "$MCP_URL" \
+  -H "Authorization: Bearer $MCP_BEARER_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' | jq '.result.tools[].name'</code></pre>
+
+  <h2 id="risks">Risks</h2>
+  <table>
+    <thead><tr><th>Risk</th><th>Mitigation</th></tr></thead>
+    <tbody>
+      <tr><td>Bearer token leaks (bot config, log, screenshot)</td><td>Blast radius is eleven read tools over five tables. Rotate the env var; no other system shares the secret. Consider rotating on a schedule once the bot is live.</td></tr>
+      <tr><td>Endpoint accidentally live on a preview deploy with production data</td><td>Set the env vars in the production environment only. Unset token → <code>503</code>.</td></tr>
+      <tr><td>Unbounded scraping through a valid token</td><td><code>limit ≤ 100</code> per call; no cursor/offset in v1, so bulk export means many logged calls rather than one. Rate limiting deferred (serverless in-memory buckets are theatre) — revisit if the log shows volume.</td></tr>
+      <tr><td>Fallback to <code>DATABASE_URL</code> silently ships as "read-only"</td><td>The route logs which URL it resolved on first use, and the plan lists the role as a deploy step, not an optional one.</td></tr>
+      <tr><td>Schema drift breaks a tool silently</td><td>Tools use Drizzle's typed columns, so a renamed column fails <code>npm run build</code>, not production.</td></tr>
+    </tbody>
+  </table>
+
+  <h2 id="scope">Out of scope</h2>
+  <ul>
+    <li>Any write tool, and any widening of this bearer toward one.</li>
+    <li>A <code>run_sql</code> / arbitrary-query tool, permanently.</li>
+    <li>Proposals, payments, subscriptions, repos, suggestions, agent runs, the graph.</li>
+    <li>MCP resources and prompts — tools only.</li>
+    <li>Per-user identity. The bearer authenticates the bot, not the Discord user behind a question; this is single-tenant CRM data and everyone with the bot sees the same thing, consistent with the app's existing model.</li>
+    <li>SSE / stateful sessions.</li>
+  </ul>
+
+  <h2 id="verify">Verification</h2>
+  <ol>
+    <li><code>npm run lint</code>, <code>npm test</code>, <code>npm run build</code>.</li>
+    <li>With <code>MCP_BEARER_TOKEN</code> unset: <code>POST /api/mcp</code> → <code>503</code>, and nothing hits the database.</li>
+    <li>With it set: no header → <code>401</code>; wrong token → <code>401</code>; correct token + <code>tools/list</code> → eleven names.</li>
+    <li><code>tools/call</code> on <code>search_companies</code> with <code>{"query":"scuba"}</code> returns rows; with <code>{"limit":9999}</code> returns 100, not 9999.</li>
+    <li>Unknown tool name → <code>isError: true</code> result, not a transport error.</li>
+    <li><code>npm run mcp:verify -- --url &lt;deployed&gt;/api/mcp --token &lt;token&gt;</code> — nine checks covering all of the above.</li>
+    <li>The three canonical questions answered end-to-end from Discord.</li>
+  </ol>
+
+  <footer>
+    Plan 006 · Read-only MCP endpoint · Toprock CRM.
+    Related: <a href="../004-architecture-hardening/plan.html">004 architecture hardening</a> (structural guarantees over conventions),
+    <a href="../principles.html">project principles</a>.
+  </footer>
+</main>
+</body>
+</html>
