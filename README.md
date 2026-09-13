@@ -39,6 +39,12 @@ Create `.env.local`:
 ```bash
 DATABASE_URL="postgresql://..."
 AUTH_SECRET="at-least-32-random-characters"
+CRM_AGENT_TOKEN="at-least-32-random-characters-for-mcp"
+# Optional — GitHub org mirror (CLI + agent sync tool)
+# GITHUB_TOKEN="ghp_..."
+# GITHUB_ORG="toprocklabs"
+# Optional — never enable in production without a reviewed policy
+# CRM_AGENT_AUTO_APPLY="false"
 ```
 
 ## 3) Install and run migrations
@@ -78,6 +84,16 @@ Open [http://localhost:3000](http://localhost:3000).
 Enums:
 - `deal_stage`: lead, qualified, proposal, negotiation, won, lost
 - `activity_type`: note, call, meeting, email, task
+
+## PM agent API
+
+Streamable HTTP MCP for an external PM agent (Paul) lives at `POST /api/mcp`. It is machine-authenticated with `Authorization: Bearer <CRM_AGENT_TOKEN>` and does **not** use the human session cookie.
+
+- Reads: accounts, contacts, opportunities, tasks, activities, pending suggestions, `project_repos`
+- Writes: `propose_suggestion` only (inbox at `/inbox`). Core tables change after a human approves.
+- Sync: `sync_project_repos` or `POST /api/agent/sync-repos` — same logic as `npm run sync:repos`
+
+See `AGENTS.md` for the tool list, suggestion payload shapes, and safety rules (no invented deal values; stage changes need evidence; never contact clients).
 
 ## Useful scripts
 

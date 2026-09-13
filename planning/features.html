@@ -98,7 +98,7 @@
   <h1>Toprock CRM — Feature Set</h1>
   <p class="lede">Everything the product does today, organized by domain, with a maturity status on each
   capability. This page evolves with the codebase — promote features from <b>planned → beta → shipped</b> as they land.</p>
-  <p class="meta">Last reviewed: <b>2026-06-13</b> &nbsp;·&nbsp; Single-tenant B2B sales tool · Next.js 16 App Router · Drizzle + Neon Postgres</p>
+  <p class="meta">Last reviewed: <b>2026-09-13</b> &nbsp;·&nbsp; Single-tenant B2B sales tool · Next.js 16 App Router · Drizzle + Neon Postgres</p>
 
   <div class="stats" id="stats"></div>
 
@@ -157,7 +157,9 @@
         <tr><td><code>/opportunities</code>, <code>/opportunities/[id]</code></td><td>Deal list + detail (fields, stage history, contextual logging)</td><td><span class="status st-shipped">shipped</span></td></tr>
         <tr><td><code>/tasks</code></td><td>Open vs. done tasks, due-date ordering</td><td><span class="status st-shipped">shipped</span></td></tr>
         <tr><td><code>/activities</code></td><td>Global activity timeline + quick log</td><td><span class="status st-shipped">shipped</span></td></tr>
-        <tr><td><code>/inbox</code></td><td>Sourcing review queue — approve/dismiss agent-proposed leads</td><td><span class="status st-beta">beta</span></td></tr>
+        <tr><td><code>/inbox</code></td><td>Human-in-the-loop queue — approve/dismiss agent proposals (activities, contacts, stages, deals) plus ranked sourcing prospects</td><td><span class="status st-beta">beta</span></td></tr>
+        <tr><td><code>/api/mcp</code></td><td>Streamable HTTP MCP for PM agents (bearer <code>CRM_AGENT_TOKEN</code>); reads + propose-only writes</td><td><span class="status st-beta">beta</span></td></tr>
+        <tr><td><code>/api/agent/health</code>, <code>/api/agent/sync-repos</code></td><td>REST companions for token check and GitHub org mirror refresh</td><td><span class="status st-beta">beta</span></td></tr>
         <tr><td><code>/map</code></td><td>Leaflet map of customers, accounts, and candidate leads with sourcing radius</td><td><span class="status st-beta">beta</span></td></tr>
         <tr><td><code>/customers</code>, <code>/customers/[id]</code></td><td>Back-compat redirects → <code>/accounts</code></td><td><span class="status st-shipped">shipped</span></td></tr>
       </tbody>
@@ -173,6 +175,7 @@
         <tr><td><code>enrich-demo.mjs</code> / <code>enrich-real.mjs</code></td><td>Batch website scrape + geocode (non-destructive fill)</td></tr>
         <tr><td><code>link-proximity.mjs</code></td><td>Auto-create <code>colocated_with</code> edges from geocoded coordinates</td></tr>
         <tr><td><code>source-nearby.mjs</code></td><td>OSM Overpass nearby-business discovery → suggestions queue</td></tr>
+        <tr><td><code>sync-repos.mjs</code></td><td>GitHub org → <code>project_repos</code> mirror (shared with the agent <code>sync_project_repos</code> tool)</td></tr>
       </tbody>
     </table>
   </div>
@@ -221,9 +224,9 @@ const FEATURES = [
 
   // ---- Sourcing & Inbox ----
   {domain:"sourcing", status:"beta", title:"Nearby-business sourcing", desc:"Queries OpenStreetMap Overpass for businesses within 250m of each customer, filters junk amenities, and files them as scored proposals.", refs:["source-nearby.mjs","suggestions"]},
-  {domain:"sourcing", status:"beta", title:"Human-in-the-loop inbox", desc:"Pending suggestions ranked by confidence with evidence; approve creates a new_lead + auto-wires a colocated_with edge, dismiss rejects.", refs:["/inbox","approveSuggestion","dismissSuggestion"]},
+  {domain:"sourcing", status:"beta", title:"Human-in-the-loop inbox", desc:"Pending suggestions with evidence. Sourcing rows stay warmth×fit ranked (approve = new_lead + colocated edge). Agent kinds (contact, activity, stage, deal, account) share the same approve/dismiss path.", refs:["/inbox","approveSuggestion","apply-suggestion.ts"]},
   {domain:"sourcing", status:"planned", title:"Email / Drive ingestion loops", desc:"data_source and agent_runs.loop reserve gmail & drive ingestion that proposes contacts/activities into the same queue — schema is in place, loops not yet wired.", refs:["data_source","agent_runs.loop"]},
-  {domain:"sourcing", status:"planned", title:"Auto-apply high-confidence", desc:"suggestions.auto_applied + auto_applied status exist to let very high-confidence proposals skip manual review; policy not yet enabled.", refs:["suggestions.autoApplied"]},
+  {domain:"sourcing", status:"beta", title:"Auto-apply high-confidence", desc:"Env-gated and off by default (CRM_AGENT_AUTO_APPLY). Default allowlist is log_activity at ≥95 confidence. Stage, deal, and account updates never auto-apply.", refs:["policy.ts","suggestions.autoApplied"]},
 
   // ---- Map ----
   {domain:"map", status:"beta", title:"Sourcing map", desc:"Leaflet + OpenStreetMap tiles plotting customers (blue), accounts (gray), and candidate leads (tan) with 250m sourcing rings and fit-to-bounds.", refs:["/map","SourcingMap","LeafletCanvas"]},
@@ -236,7 +239,8 @@ const FEATURES = [
 
   // ---- Agent infra ----
   {domain:"agent", status:"shipped", title:"Source attribution", desc:"Every activity and edge records whether it came from a human (manual) or an agent, keeping autonomy auditable.", refs:["data_source"]},
-  {domain:"agent", status:"planned", title:"Agent run accounting", desc:"agent_runs logs each loop execution with model, token in/out, cost, and items seen/proposed — table exists for when standing loops run on a schedule.", refs:["agent_runs"]},
+  {domain:"agent", status:"shipped", title:"Agent run accounting", desc:"agent_runs logs each PM-agent propose and repo sync (loop=pm_agent | sync_repos) with status and items seen/proposed.", refs:["agent_runs"]},
+  {domain:"agent", status:"beta", title:"PM agent MCP", desc:"Streamable HTTP MCP at /api/mcp with bearer CRM_AGENT_TOKEN. Read tools plus propose_suggestion (inbox) and sync_project_repos. Human session cookies are unchanged.", refs:["/api/mcp","src/lib/agent","AGENTS.md"]},
 
   // ---- Platform ----
   {domain:"platform", status:"shipped", title:"JWT cookie auth", desc:"Custom username/password login with a signed session cookie; every page gated by requireUser(), passwords bcrypt-hashed.", refs:["auth.ts","login","requireUser"]},

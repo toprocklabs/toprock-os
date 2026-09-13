@@ -16,7 +16,7 @@
     "enrich:real": "node scripts/enrich-real.mjs",
     "enrich:apply": "node scripts/apply-enrichment.mjs",
     "link:proximity": "node scripts/link-proximity.mjs",
-    "sync:repos": "node scripts/sync-repos.mjs",
+    "sync:repos": "tsx scripts/sync-repos.mjs",
     "source:nearby": "node scripts/source-nearby.mjs",
     "cleanup:demo": "node scripts/cleanup-demo.mjs",
     "stripe:import": "tsx scripts/import-stripe.mts"
