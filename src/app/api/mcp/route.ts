@@ -7,7 +7,7 @@ import {
   MCP_SERVER_VERSION,
   parseJsonBody,
 } from "@/lib/agent/mcp";
-import { dispatchAgentTool } from "@/lib/agent/tools";
+import { AgentToolError, dispatchAgentTool } from "@/lib/agent/tools";
 import { getDb } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
@@ -58,14 +58,6 @@ export async function POST(request: Request) {
     return denied;
   }
 
-  const db = getDb();
-  if (!db) {
-    return jsonWithCors(
-      { jsonrpc: "2.0", id: null, error: { code: -32603, message: "DATABASE_URL is not set." } },
-      { status: 503, headers: sessionHeaders(request) },
-    );
-  }
-
   const text = await request.text();
   const parsed = parseJsonBody(text);
   if (!parsed.ok) {
@@ -75,7 +67,13 @@ export async function POST(request: Request) {
     );
   }
 
-  const result = await handleMcpBody(parsed.value, (name, args) => dispatchAgentTool(name, args, db));
+  const db = getDb();
+  const result = await handleMcpBody(parsed.value, async (name, args) => {
+    if (!db) {
+      throw new AgentToolError("DATABASE_URL is not set.");
+    }
+    return dispatchAgentTool(name, args, db);
+  });
   if (result.kind === "ack") {
     return emptyWithCors({ status: 202, headers: sessionHeaders(request) });
   }
