@@ -59,11 +59,29 @@ function rpcResult(id: JsonRpcId, result: unknown): JsonRpcResponse {
   return { jsonrpc: "2.0", id, result };
 }
 
+/**
+ * Cursor's MCP client validates `structuredContent` as a JSON object
+ * (`Record<string, unknown>`). List tools historically returned a raw array,
+ * which the host rejected with "expected record, received array".
+ */
+export function toStructuredContent(payload: unknown): Record<string, unknown> {
+  if (typeof payload === "string") {
+    return { text: payload };
+  }
+  if (Array.isArray(payload)) {
+    return { items: payload };
+  }
+  if (payload !== null && typeof payload === "object") {
+    return payload as Record<string, unknown>;
+  }
+  return { value: payload };
+}
+
 function toolResult(payload: unknown, isError = false) {
   const text = typeof payload === "string" ? payload : JSON.stringify(payload, null, 2);
   return {
     content: [{ type: "text", text }],
-    structuredContent: typeof payload === "string" ? { text: payload } : payload,
+    structuredContent: toStructuredContent(payload),
     isError,
   };
 }
