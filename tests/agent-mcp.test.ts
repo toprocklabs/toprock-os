@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { MCP_TOOLS } from "@/lib/agent/catalog";
-import { handleMcpBody, handleMcpMessage, negotiateProtocolVersion } from "@/lib/agent/mcp";
+import { handleMcpBody, handleMcpMessage, negotiateProtocolVersion, toStructuredContent } from "@/lib/agent/mcp";
 import { AgentToolError } from "@/lib/agent/tools";
 
 describe("negotiateProtocolVersion", () => {
@@ -11,6 +11,29 @@ describe("negotiateProtocolVersion", () => {
 
   it("falls back to Streamable HTTP 2025-03-26", () => {
     assert.equal(negotiateProtocolVersion("1999-01-01"), "2025-03-26");
+  });
+});
+
+describe("toStructuredContent", () => {
+  it("wraps a string as { text }", () => {
+    assert.deepEqual(toStructuredContent("hello"), { text: "hello" });
+  });
+
+  it("wraps an array as { items } so Cursor's MCP client accepts list_* results", () => {
+    const items = [{ id: 1 }, { id: 2 }];
+    assert.deepEqual(toStructuredContent(items), { items });
+    assert.deepEqual(toStructuredContent([]), { items: [] });
+  });
+
+  it("passes a plain object through", () => {
+    const account = { id: 7, name: "Acme" };
+    assert.equal(toStructuredContent(account), account);
+  });
+
+  it("wraps null, numbers, and booleans as { value }", () => {
+    assert.deepEqual(toStructuredContent(null), { value: null });
+    assert.deepEqual(toStructuredContent(42), { value: 42 });
+    assert.deepEqual(toStructuredContent(true), { value: true });
   });
 });
 
@@ -56,11 +79,35 @@ describe("handleMcpMessage", () => {
     assert.ok(names.includes("list_accounts"));
   });
 
-  it("returns a tool error payload for AgentToolError", async () => {
+  it("wraps a list tool array in structuredContent without changing the text payload", async () => {
+    const accounts = [{ id: 1, name: "Acme" }, { id: 2, name: "Beta" }];
     const response = await handleMcpMessage(
       {
         jsonrpc: "2.0",
         id: 3,
+        method: "tools/call",
+        params: { name: "list_accounts", arguments: {} },
+      },
+      async () => accounts,
+    );
+    assert.ok(response);
+    const result = response.result as {
+      content: { type: string; text: string }[];
+      structuredContent: unknown;
+      isError: boolean;
+    };
+    assert.equal(result.isError, false);
+    assert.equal(result.content[0].text, JSON.stringify(accounts, null, 2));
+    assert.deepEqual(result.structuredContent, { items: accounts });
+    assert.equal(typeof result.structuredContent, "object");
+    assert.equal(Array.isArray(result.structuredContent), false);
+  });
+
+  it("returns a tool error payload for AgentToolError", async () => {
+    const response = await handleMcpMessage(
+      {
+        jsonrpc: "2.0",
+        id: 4,
         method: "tools/call",
         params: { name: "propose_suggestion", arguments: {} },
       },
