@@ -43,8 +43,10 @@ CRM_AGENT_TOKEN="at-least-32-random-characters-for-mcp"
 # Optional — GitHub org mirror (CLI + agent sync tool)
 # GITHUB_TOKEN="ghp_..."
 # GITHUB_ORG="toprocklabs"
-# Optional — never enable in production without a reviewed policy
-# CRM_AGENT_AUTO_APPLY="false"
+# Optional — auto-apply high-confidence agent suggestions (off by default)
+# CRM_AGENT_AUTO_APPLY="true"
+# CRM_AGENT_AUTO_APPLY_KINDS="log_activity,new_company,new_contact,new_edge,stage_change,new_deal,update_deal,update_account"
+# CRM_AGENT_AUTO_APPLY_MIN_CONFIDENCE="95"
 ```
 
 ## 3) Install and run migrations

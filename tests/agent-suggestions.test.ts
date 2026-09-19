@@ -195,9 +195,55 @@ describe("shouldAutoApply", () => {
     );
   });
 
-  it("never auto-applies stage or money writes", () => {
-    const env = { CRM_AGENT_AUTO_APPLY: "true", CRM_AGENT_AUTO_APPLY_KINDS: "stage_change,update_deal" };
-    assert.equal(shouldAutoApply({ kind: "stage_change", confidence: 100 }, env), false);
-    assert.equal(shouldAutoApply({ kind: "update_deal", confidence: 100 }, env), false);
+  it("stays off when CRM_AGENT_AUTO_APPLY is false even if kinds are listed", () => {
+    const env = {
+      CRM_AGENT_AUTO_APPLY: "false",
+      CRM_AGENT_AUTO_APPLY_KINDS: "stage_change",
+    };
+    assert.equal(shouldAutoApply({ kind: "stage_change", confidence: 95 }, env), false);
+  });
+
+  it("auto-applies high-confidence stage_change when enabled and listed", () => {
+    assert.equal(
+      shouldAutoApply(
+        { kind: "stage_change", confidence: 95 },
+        {
+          CRM_AGENT_AUTO_APPLY: "true",
+          CRM_AGENT_AUTO_APPLY_KINDS: "stage_change",
+        },
+      ),
+      true,
+    );
+  });
+
+  it("auto-applies listed stage/deal/account kinds at sufficient confidence", () => {
+    const env = {
+      CRM_AGENT_AUTO_APPLY: "true",
+      CRM_AGENT_AUTO_APPLY_KINDS: "stage_change,new_deal,update_deal,update_account",
+    };
+    assert.equal(shouldAutoApply({ kind: "stage_change", confidence: 95 }, env), true);
+    assert.equal(shouldAutoApply({ kind: "new_deal", confidence: 95 }, env), true);
+    assert.equal(shouldAutoApply({ kind: "update_deal", confidence: 100 }, env), true);
+    assert.equal(shouldAutoApply({ kind: "update_account", confidence: 95 }, env), true);
+  });
+
+  it("does not auto-apply a kind that is not in the allowlist", () => {
+    assert.equal(
+      shouldAutoApply(
+        { kind: "update_deal", confidence: 100 },
+        { CRM_AGENT_AUTO_APPLY: "true", CRM_AGENT_AUTO_APPLY_KINDS: "stage_change" },
+      ),
+      false,
+    );
+  });
+
+  it("does not auto-apply below the confidence floor", () => {
+    assert.equal(
+      shouldAutoApply(
+        { kind: "stage_change", confidence: 94 },
+        { CRM_AGENT_AUTO_APPLY: "true", CRM_AGENT_AUTO_APPLY_KINDS: "stage_change" },
+      ),
+      false,
+    );
   });
 });

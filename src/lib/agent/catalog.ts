@@ -33,7 +33,7 @@ export const MCP_INSTRUCTIONS = [
   "Never invent deal values (MRR / implementation cost). Only include money fields when evidence cites a real number from a meeting, email, or signed SOW.",
   "Stage changes need concrete evidence of what was said or observed. Do not guess pipeline movement.",
   "Never contact clients. This API does not send email, call, or message anyone.",
-  "Writes go to /inbox as suggestions (source=agent). A human approves them. Auto-apply is off unless operators enable it, and never for stage/money/account updates.",
+  "Writes go to /inbox as suggestions (source=agent). A human approves them. Auto-apply is off unless operators enable it via CRM_AGENT_AUTO_APPLY and list the kind in CRM_AGENT_AUTO_APPLY_KINDS at sufficient confidence — including stage/deal/account kinds.",
   "Do not call the GitHub API yourself against this product's request path — use sync_project_repos when the mirror is stale. /accounts reads Postgres only.",
 ].join(" ");
 

@@ -1,10 +1,3 @@
-const NEVER_AUTO_APPLY = new Set([
-  "stage_change",
-  "new_deal",
-  "update_deal",
-  "update_account",
-]);
-
 const DEFAULT_AUTO_APPLY_KINDS = ["log_activity"];
 const DEFAULT_MIN_CONFIDENCE = 95;
 
@@ -39,15 +32,14 @@ export function autoApplyMinConfidence(env: AutoApplyPolicyEnv = process.env) {
 }
 
 // High-confidence auto-apply is off unless CRM_AGENT_AUTO_APPLY=true.
-// Pipeline, money, and account-stage writes are never auto-applied.
+// Any kind listed in CRM_AGENT_AUTO_APPLY_KINDS can auto-apply once
+// confidence meets CRM_AGENT_AUTO_APPLY_MIN_CONFIDENCE (default 95).
+// Default allowlist is log_activity only.
 export function shouldAutoApply(
   input: AutoApplyPolicyInput,
   env: AutoApplyPolicyEnv = process.env,
 ) {
   if (!isAutoApplyEnabled(env)) {
-    return false;
-  }
-  if (NEVER_AUTO_APPLY.has(input.kind)) {
     return false;
   }
   if (input.confidence < autoApplyMinConfidence(env)) {

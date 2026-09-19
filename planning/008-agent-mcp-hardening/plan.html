@@ -115,7 +115,7 @@
     <li>Streamable HTTP MCP at <code>POST /api/mcp</code>, with <code>GET</code> returning server info and <code>DELETE</code> ending a session. CORS and <code>Mcp-Session-Id</code> handling included.</li>
     <li>Ten read tools: <code>list_accounts</code>, <code>get_account</code>, <code>list_contacts</code>, <code>get_contact</code>, <code>list_opportunities</code>, <code>get_opportunity</code>, <code>list_tasks</code>, <code>list_activities</code>, <code>list_suggestions</code>, <code>list_project_repos</code>.</li>
     <li>Two write tools: <code>propose_suggestion</code> (inserts a pending <code>suggestions</code> row plus an <code>agent_runs</code> row — never a core table) and <code>sync_project_repos</code> (refreshes the GitHub mirror).</li>
-    <li>An auto-apply policy that is <strong>off by default</strong>: requires <code>CRM_AGENT_AUTO_APPLY=true</code>, confidence ≥ 95, and an allowlist defaulting to <code>log_activity</code> alone. <code>stage_change</code>, <code>new_deal</code>, <code>update_deal</code> and <code>update_account</code> can never auto-apply.</li>
+    <li>An auto-apply policy that is <strong>off by default</strong>: requires <code>CRM_AGENT_AUTO_APPLY=true</code>, confidence ≥ 95, and an allowlist defaulting to <code>log_activity</code> alone. PR #4 also hard-blocked <code>stage_change</code>, <code>new_deal</code>, <code>update_deal</code> and <code>update_account</code>. <strong>That hard-block was later removed</strong> — those kinds auto-apply when listed in <code>CRM_AGENT_AUTO_APPLY_KINDS</code> at sufficient confidence. Env gates remain.</li>
     <li>REST companions at <code>GET /api/agent/health</code> and <code>POST /api/agent/sync-repos</code>, same bearer.</li>
     <li>Tests for auth rejection, payload validation, suggestion shape, MCP initialize/list, and repo-sync planning.</li>
   </ul>
@@ -157,7 +157,7 @@ npm run mcp:role -- --audit-only   # "is it still read-only?", months from now</
     <thead><tr><th>Risk</th><th>Standing</th></tr></thead>
     <tbody>
       <tr><td>One token covers both read and write tools</td><td>Accepted for now. A leaked <code>CRM_AGENT_TOKEN</code> can propose suggestions, which a human must still approve in <code>/inbox</code>. Splitting into two tokens is the next hardening step if the agent's audience ever widens.</td></tr>
-      <tr><td>Auto-apply could be switched on carelessly</td><td>Off by default, needs three env vars aligned, and the dangerous kinds are hard-blocked in code rather than by configuration.</td></tr>
+      <tr><td>Auto-apply could be switched on carelessly</td><td>Off by default and still needs three env vars aligned (<code>CRM_AGENT_AUTO_APPLY</code>, kinds allowlist, min confidence). The original hard-block on stage/deal/account kinds was later removed so operators can allowlist those kinds on purpose.</td></tr>
       <tr><td>Prompt injection through activity notes</td><td>Unchanged from plan 006: notes are attacker-influenceable text. The mitigation is that the write path leads to a review queue, not to the database.</td></tr>
       <tr><td><code>sync_project_repos</code> calls GitHub with <code>GITHUB_TOKEN</code></td><td>Read-only PAT, mirror-only writes into <code>project_repos</code>. Noted rather than mitigated further.</td></tr>
     </tbody>
