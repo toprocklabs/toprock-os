@@ -38,6 +38,36 @@ export function isPubliclyAllowed(pathname: string) {
 }
 
 /**
+ * The root answers with a fixed placeholder instead of a 404, so the bare
+ * domain (and Vercel's dashboard screenshot of it) doesn't look like an outage.
+ *
+ * `/` is deliberately NOT on the allowlist: in the app it is the dashboard, which
+ * renders CRM data. The proxy answers it itself with this static page and the
+ * request never reaches the app. It names nothing, links nothing, and has no form.
+ */
+export function isLandingPath(pathname: string) {
+  return pathname === "/";
+}
+
+export const LANDING_HTML = `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Toprock</title>
+<style>
+  html, body { height: 100%; margin: 0; }
+  body { display: grid; place-items: center; background: #0f172a; color: #cbd5e1;
+         font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  p { margin: 0; letter-spacing: 0.02em; }
+</style>
+</head>
+<body><p>Toprock &middot; private service</p></body>
+</html>
+`;
+
+/**
  * Locked in production unless explicitly opened.
  *
  * Keyed off NODE_ENV rather than Vercel's own flag so that a deployment
