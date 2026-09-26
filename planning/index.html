@@ -100,9 +100,9 @@
       <tr>
         <td>007</td>
         <td><a href="007-private-deployment/plan.html">Private deployment &amp; data migration</a></td>
-        <td><span class="status s-accepted">Accepted</span></td>
+        <td><span class="status s-superseded">Superseded</span></td>
         <td><a href="007-private-deployment/plan.html">plan</a></td>
-        <td class="note">Host on Vercel for the agent's sake while the CRM itself 404s to the internet: only /api/mcp, /api/agent/* and the client SOW pages answer. Plus old &rarr; new Neon data migration.</td>
+        <td class="note">Host on Vercel for the agent's sake while the CRM itself 404s to the internet: only /api/mcp, /api/agent/* and the client SOW pages answer. Plus old &rarr; new Neon data migration. Lockdown superseded by <a href="009-web-ui-behind-login/plan.html">009</a>; migration tooling still current.</td>
       </tr>
       <tr>
         <td>008</td>
@@ -110,6 +110,13 @@
         <td><span class="status s-accepted">Accepted</span></td>
         <td><a href="008-agent-mcp-hardening/plan.html">plan</a></td>
         <td class="note">The MCP that actually shipped (PR #4) plus the ported security layer: SELECT-only role for the ten read tools, a tested read/write classification, and a surface verifier.</td>
+      </tr>
+      <tr>
+        <td>009</td>
+        <td><a href="009-web-ui-behind-login/plan.html">CRM web UI behind login</a></td>
+        <td><span class="status s-accepted">Accepted</span></td>
+        <td><a href="009-web-ui-behind-login/plan.html">plan</a></td>
+        <td class="note">Open the CRM at the Vercel URL behind the existing login: proxy-enforced session on every non-public path, Postgres-backed login throttling, opt-in <code>CRM_WEB_UI</code> switch. Supersedes the lockdown half of <a href="007-private-deployment/plan.html">007</a>.</td>
       </tr>
     </tbody>
   </table>

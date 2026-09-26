@@ -12,8 +12,8 @@ if (!usernameArg || !passwordArg) {
   process.exit(1);
 }
 
-if (passwordArg.length < 6) {
-  console.error("Password must be at least 6 characters.");
+if (passwordArg.length < 12) {
+  console.error("Password must be at least 12 characters (the CRM login is on the internet — planning/009).");
   process.exit(1);
 }
 

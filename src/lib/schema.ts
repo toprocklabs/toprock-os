@@ -111,6 +111,24 @@ export const users = pgTable(
   ],
 );
 
+// Every /login attempt, for brute-force throttling (planning/009-web-ui-behind-login).
+// Not granted to the MCP read-only role; rows older than 30 days are pruned by
+// the login action itself.
+export const loginAttempts = pgTable(
+  "login_attempts",
+  {
+    id: serial("id").primaryKey(),
+    username: text("username").notNull(),
+    ip: text("ip").notNull(),
+    succeeded: boolean("succeeded").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index("login_attempts_username_created_idx").on(table.username, table.createdAt),
+    index("login_attempts_ip_created_idx").on(table.ip, table.createdAt),
+  ],
+);
+
 export const companies = pgTable(
   "companies",
   {

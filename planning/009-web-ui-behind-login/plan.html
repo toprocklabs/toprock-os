@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<!--
+  planning/009-web-ui-behind-login/plan.html — the HOW.
+  Open the CRM UI on the Vercel deployment behind the existing login, with the
+  proxy enforcing a session on every non-public path and a rate-limited login.
+  Supersedes 007 (the lockdown half; its migration tooling stands).
+  Keep section order stable for clean diffs.
+-->
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Plan · Web UI behind login</title>
+<style>
+  :root{--bg:#fbfaf8;--ink:#1c1b1a;--muted:#6b6660;--line:#e6e2db;--accent:#3a5a78;--soft:#eef2f6;--codebg:#f3f1ec;
+    --proposed:#9a7b2f;--proposed-bg:#f6efdd;--accepted:#3f6b4a;--accepted-bg:#e9f1ea;
+    --t0:#3f6b4a;--t0-bg:#e9f1ea;--t1:#3a5a78;--t1-bg:#e8eef4;--t2:#9a7b2f;--t2-bg:#f6efdd;--t3:#9a4b3f;--t3-bg:#f5e8e5;}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font:16px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+  main{max-width:820px;margin:0 auto;padding:44px 28px 80px}
+  .top{display:flex;justify-content:space-between;align-items:center;font-size:13px;color:var(--muted)}
+  .top a{color:var(--accent);text-decoration:none}
+  .status{display:inline-block;font-size:11px;font-weight:700;letter-spacing:.03em;padding:3px 11px;border-radius:20px;text-transform:capitalize}
+  .s-proposed{color:var(--proposed);background:var(--proposed-bg)}
+  .s-accepted{color:var(--accepted);background:var(--accepted-bg)}
+  .s-superseded{color:#8a8580;background:#efece8}
+  .kicker{font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--accent);font-weight:600;margin-top:18px}
+  h1{font-size:30px;margin:6px 0 6px;letter-spacing:-.01em}
+  .lede{color:var(--muted);font-size:17px;margin:0 0 8px}
+  h2{font-size:14px;letter-spacing:.05em;text-transform:uppercase;color:var(--accent);
+    border-top:1px solid var(--line);padding-top:22px;margin:32px 0 10px}
+  h3{font-size:15.5px;margin:18px 0 6px}
+  p{margin:8px 0}ul,ol{margin:8px 0;padding-left:22px}li{margin:5px 0}
+  code{background:var(--codebg);padding:1.5px 5px;border-radius:4px;font-size:13.5px;font-family:"SF Mono",Consolas,Menlo,monospace}
+  pre{background:var(--codebg);border:1px solid var(--line);border-radius:8px;padding:12px 14px;overflow-x:auto;font-size:13px;line-height:1.5}
+  pre code{background:none;padding:0}
+  table{border-collapse:collapse;width:100%;font-size:14px;margin:10px 0}
+  th,td{text-align:left;padding:8px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{font-size:12px;text-transform:uppercase;color:var(--muted);background:var(--soft)}
+  .callout{background:#fff;border:1px solid var(--line);border-left:3px solid var(--accent);border-radius:8px;padding:12px 16px;margin:14px 0}
+  .callout.warn{border-left-color:var(--t3)}
+  .callout.good{border-left-color:var(--t0)}
+  .phase{background:#fff;border:1px solid var(--line);border-radius:10px;padding:16px 18px;margin:14px 0}
+  .phase h3{margin:0 0 6px;color:var(--accent)}
+  .phase .tag{font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
+  .tier{display:inline-block;font-size:10.5px;font-weight:700;letter-spacing:.04em;padding:2px 8px;border-radius:20px;text-transform:uppercase;white-space:nowrap}
+  .tier-0{color:var(--t0);background:var(--t0-bg)}
+  .tier-3{color:var(--t3);background:var(--t3-bg)}
+  .mono{font-family:"SF Mono",Consolas,Menlo,monospace;font-size:12.5px}
+  .yes{color:var(--t0);font-weight:700}
+  .no{color:var(--t3);font-weight:700}
+  figure{margin:16px 0;background:#fff;border:1px solid var(--line);border-radius:10px;padding:16px}
+  figcaption{font-size:12.5px;color:var(--muted);margin-top:10px;text-align:center}
+  .toc{background:#fff;border:1px solid var(--line);border-radius:10px;padding:14px 18px;margin:18px 0}
+  .toc ol{margin:6px 0;padding-left:20px;font-size:14px;columns:2;column-gap:28px}
+  .toc a{color:var(--accent);text-decoration:none}
+  .toc a:hover{text-decoration:underline}
+  footer{margin-top:36px;color:var(--muted);font-size:12.5px;border-top:1px solid var(--line);padding-top:16px}
+  @media (max-width:640px){main{padding:28px 16px 60px}.toc ol{columns:1}}
+</style>
+<body>
+<main>
+  <div class="top">
+    <a href="../index.html">← Planning index</a>
+    <span class="status s-accepted">Accepted</span>
+  </div>
+
+  <div class="kicker">Plan · Feature 009</div>
+  <h1>CRM web UI behind login</h1>
+  <p class="lede">Make the CRM usable at the Vercel URL — phone, any laptop — by opening it behind the existing username/password session, with the proxy enforcing that session on every path and the login form rate-limited. The agent API, client SOW pages, and the SELECT-only MCP role do not change.</p>
+  <div class="callout">
+    <p style="margin:0"><strong>Supersedes <a href="../007-private-deployment/plan.html">plan 007</a></strong> — the "no web UI at all" half. 007's data-migration tooling and its default-deny, fail-closed reasoning stand; this plan keeps both and changes what "deny" means for signed-in people. <a href="../008-agent-mcp-hardening/plan.html">Plan 008</a> is untouched.</p>
+  </div>
+
+  <div class="toc">
+    <strong style="font-size:13px">Contents</strong>
+    <ol>
+      <li><a href="#why">Why reverse 007</a></li>
+      <li><a href="#tradeoff">What we give up</a></li>
+      <li><a href="#model">The new surface model</a></li>
+      <li><a href="#proxy">Mechanism: session gate in proxy.ts</a></li>
+      <li><a href="#switch">The on/off switch</a></li>
+      <li><a href="#login">Login hardening</a></li>
+      <li><a href="#headers">Cookie &amp; response headers</a></li>
+      <li><a href="#files">Files</a></li>
+      <li><a href="#phases">Phases</a></li>
+      <li><a href="#risks">Risks</a></li>
+      <li><a href="#scope">Out of scope</a></li>
+      <li><a href="#verify">Verification</a></li>
+    </ol>
+  </div>
+
+  <h2 id="why">Why reverse 007</h2>
+  <p>007 named its own cost: no phone access, no access from a machine without the repo, and onboarding anyone means handing over a database credential. That friction bit. The ask now is to use the CRM at <code>toprock-os.vercel.app</code> like a normal web app. Of the options considered — app login + hardening, a second Vercel project behind Vercel Authentication, or an IP allowlist — the app login was chosen: one deployment, no extra cost, works from any network.</p>
+
+  <h2 id="tradeoff">What we give up</h2>
+  <div class="callout warn">
+    <p style="margin:0">007's strongest property was that <strong>production had no authentication surface at all</strong>. After this plan it has one: a public <code>/login</code> form. Everything below exists to make that form expensive to attack and to make sure it is the <em>only</em> door — no page, data request, or server action is reachable without a valid session, even if a future page forgets its own check.</p>
+  </div>
+
+  <h2 id="model">The new surface model</h2>
+  <p>Three tiers instead of two. The decision stays a pure, tested function in <code>src/lib/public-surface.ts</code>.</p>
+  <table>
+    <thead><tr><th>Tier</th><th>Paths</th><th>No session</th><th>Gate</th></tr></thead>
+    <tbody>
+      <tr><td>Public</td><td><code>/api/mcp</code>, <code>/api/agent/*</code>, <code>/p/*</code>, <code>/_next/*</code>, <code>/favicon.ico</code>, <code>/robots.txt</code></td><td class="yes">served</td><td>Their own: bearer token / proposal PIN. Unchanged.</td></tr>
+      <tr><td>Login</td><td><code>/login</code></td><td class="yes">served</td><td>Rate-limited username/password (below).</td></tr>
+      <tr><td>Signed-in</td><td>everything else — <code>/</code>, <code>/accounts</code>, <code>/proposals/&lt;id&gt;/pdf</code>, RSC fetches, server-action POSTs, and any route added later</td><td class="no">302 → /login (GET) · 401 (other)</td><td>Valid <code>crm_session</code> JWT, verified in the proxy <em>and</em> again by <code>requireUser()</code> in the page/action.</td></tr>
+    </tbody>
+  </table>
+  <p><strong>Default deny is preserved</strong>: a new route is signed-in-only unless deliberately added to the public list. What changes is that "deny" now means "log in first" rather than "404 to everyone".</p>
+  <p>The static placeholder at <code>/</code> (PR #8) is removed — <code>/</code> is the dashboard again and simply redirects anonymous visitors to <code>/login</code>.</p>
+
+  <h2 id="proxy">Mechanism: session gate in proxy.ts</h2>
+  <p>Today every page calls <code>requireUser()</code> and every action goes through <code>defineAction</code> — correct, but per-route. The proxy adds a second, structural check that runs before any route renders, so one forgotten guard can't leak a page.</p>
+<pre><code>// src/proxy.ts (sketch)
+export async function proxy(request: NextRequest) {
+  const surface = classifyPath(request.nextUrl.pathname); // "public" | "login" | "private"
+  if (!isWebUiEnabled()) return lockdown(surface);        // 007 behavior, unchanged
+  if (surface !== "private") return NextResponse.next();
+  if (await verifySessionToken(request.cookies.get(SESSION_COOKIE)?.value)) {
+    return NextResponse.next();
+  }
+  return request.method === "GET"
+    ? NextResponse.redirect(new URL("/login", request.url))
+    : new NextResponse(null, { status: 401 });
+}</code></pre>
+  <ul>
+    <li><code>verifySessionToken</code> is extracted from <code>src/lib/auth.ts</code> so the proxy and <code>getSession()</code> share one JWT check (<code>jose</code>, HS256, <code>AUTH_SECRET</code>). The proxy runs on Node in Next 16, so no Edge constraints.</li>
+    <li>The proxy only checks the signature and expiry — it doesn't hit the database. Pages still call <code>requireUser()</code>; both layers must pass.</li>
+    <li><code>?next=</code> return-to after login is allowed only for same-origin relative paths starting with a single <code>/</code> (no open redirect).</li>
+  </ul>
+
+  <h2 id="switch">The on/off switch</h2>
+  <p>The web UI is opt-in per environment with <code>CRM_WEB_UI=on</code>. Absent or any other value → exactly 007's lockdown (404 wall). This keeps 007's fail-closed rule: a new environment, preview, or fork is locked until someone turns the UI on deliberately, and turning it off in an incident is one env change + redeploy.</p>
+  <table>
+    <thead><tr><th>Context</th><th>Result</th></tr></thead>
+    <tbody>
+      <tr><td><code>npm run dev</code></td><td>Unchanged: everything served, pages still redirect to <code>/login</code> via <code>requireUser()</code>.</td></tr>
+      <tr><td>Vercel production, <code>CRM_WEB_UI=on</code></td><td>Three-tier model above.</td></tr>
+      <tr><td>Vercel production/preview without it</td><td>007 lockdown: private paths 404.</td></tr>
+      <tr><td><code>CRM_PUBLIC_SURFACE=all</code></td><td>Retired. Removed from code so it can't be set by accident; <code>CRM_WEB_UI</code> replaces it with a gated opening instead of an ungated one.</td></tr>
+    </tbody>
+  </table>
+
+  <h2 id="login">Login hardening</h2>
+  <table>
+    <thead><tr><th>Control</th><th>Detail</th></tr></thead>
+    <tbody>
+      <tr><td>Attempt log</td><td>New <code>login_attempts</code> table: <code>username</code>, <code>ip</code>, <code>succeeded</code>, <code>created_at</code>, indexed on <code>(username, created_at)</code> and <code>(ip, created_at)</code>. Postgres, not an in-memory map — Fluid Compute runs several instances, and a per-instance counter is trivially spread across them.</td></tr>
+      <tr><td>Per-username lockout</td><td>≥ 5 failures in 15 min, counted since that username's last successful login → reject further attempts until the window rolls off. Rejected attempts are not recorded, so a lockout cannot be extended indefinitely. Message: "Too many sign-in attempts" — safe to distinguish, because the limit applies to any username string, real or not, so it reveals nothing about which accounts exist.</td></tr>
+      <tr><td>Per-IP limit</td><td>≥ 20 failures in 15 min from one IP → reject. IP from <code>x-forwarded-for</code> first hop (Vercel sets it; not spoofable past their edge).</td></tr>
+      <tr><td>No user enumeration</td><td>Unknown username still runs a <code>bcrypt.compare</code> against a fixed dummy hash, so timing and message match a wrong password.</td></tr>
+      <tr><td>Password floor</td><td><code>user:create</code> requires ≥ 12 characters for new or reset passwords. Existing users are asked to reset before the switch is flipped. (The login form itself still accepts ≥ 6, so existing passwords keep working until reset.)</td></tr>
+      <tr><td>Retention</td><td>Rows older than 30 days deleted opportunistically on each login attempt (one cheap indexed <code>DELETE</code>). No cron needed.</td></tr>
+    </tbody>
+  </table>
+
+  <h2 id="headers">Cookie &amp; response headers</h2>
+  <ul>
+    <li><code>crm_session</code> stays <code>httpOnly</code>, <code>Secure</code> in production, <code>SameSite=Lax</code>, 14-day expiry. Lax still blocks cross-site POSTs to server actions; Next also checks the <code>Origin</code> header on actions.</li>
+    <li>Proxy adds <code>X-Robots-Tag: noindex, nofollow</code> to every response, and <code>X-Frame-Options: DENY</code> + <code>Referrer-Policy: same-origin</code> to signed-in and login responses (clickjacking on the login form and the app).</li>
+    <li>Sign-out everywhere = rotate <code>AUTH_SECRET</code> in Vercel and redeploy. Documented, not built (see out of scope).</li>
+  </ul>
+
+  <h2 id="files">Files</h2>
+  <table>
+    <thead><tr><th>Path</th><th>Change</th></tr></thead>
+    <tbody>
+      <tr><td><code>src/lib/public-surface.ts</code></td><td><code>classifyPath()</code>, <code>isWebUiEnabled()</code>; drop the landing page and <code>CRM_PUBLIC_SURFACE</code>.</td></tr>
+      <tr><td><code>src/proxy.ts</code></td><td>Session gate + headers.</td></tr>
+      <tr><td><code>src/lib/auth.ts</code></td><td>Extract <code>verifySessionToken()</code>, export <code>SESSION_COOKIE</code>.</td></tr>
+      <tr><td><code>src/lib/login-throttle.ts</code></td><td>Pure decision (<code>shouldBlock(counts)</code>) + DB helpers.</td></tr>
+      <tr><td><code>src/app/login/actions.ts</code></td><td>Throttle, dummy compare, record attempts, safe <code>next</code> redirect.</td></tr>
+      <tr><td><code>src/lib/schema.ts</code> + <code>drizzle/</code></td><td><code>login_attempts</code> table.</td></tr>
+      <tr><td><code>scripts/create-user.mjs</code></td><td>12-char minimum.</td></tr>
+      <tr><td><code>scripts/verify-mcp.mjs</code></td><td>Wall checks become mode-aware: private path → 302 to <code>/login</code> (UI on) or 404 (UI off).</td></tr>
+      <tr><td><code>tests/public-surface.test.ts</code>, <code>tests/login-throttle.test.ts</code>, <code>tests/safe-next.test.ts</code></td><td>Classification, switch, thresholds, redirect sanitizing.</td></tr>
+      <tr><td><code>AGENTS.md</code></td><td>Replace the "Private deployment (plan 007)" section.</td></tr>
+    </tbody>
+  </table>
+
+  <h2 id="phases">Phases</h2>
+  <div class="phase">
+    <div class="tag">Phase 1 — built, switch off</div>
+    <h3>Gate, throttle, tests</h3>
+    <p>Ship everything with <code>CRM_WEB_UI</code> unset. Production behaves exactly as today; the new paths are exercised locally with <code>npm run build &amp;&amp; CRM_WEB_UI=on npm start</code>.</p>
+  </div>
+  <div class="phase">
+    <div class="tag">Phase 2 — table applied; passwords outstanding</div>
+    <h3>Schema and credentials</h3>
+    <p>Apply <code>drizzle/0009_far_magus.sql</code> directly — <strong>not</strong> <code>db:push</code>: the shared database holds five tables this schema doesn't define (<code>brain_*</code>, <code>meeting*</code>), and push offers to drop or rename them. Reset both users' passwords to ≥ 12 characters. Re-run <code>npm run mcp:role -- --audit-only</code> — the new table must <em>not</em> be readable by the MCP role.</p>
+  </div>
+  <div class="phase">
+    <div class="tag">Phase 3 — flip</div>
+    <h3>Turn the UI on in production</h3>
+    <p><code>CRM_WEB_UI=on</code> in Vercel production only, redeploy, run the verification list. Rollback is removing the variable and redeploying.</p>
+  </div>
+
+  <h2 id="risks">Risks</h2>
+  <table>
+    <thead><tr><th>Risk</th><th>Mitigation</th></tr></thead>
+    <tbody>
+      <tr><td>Password guessing against <code>/login</code></td><td>Per-username + per-IP throttles in Postgres; 12-char minimum; generic errors.</td></tr>
+      <tr><td>A future page forgets <code>requireUser()</code></td><td>Proxy gate catches it; default deny means new routes are signed-in-only.</td></tr>
+      <tr><td>Stolen session cookie</td><td><code>httpOnly</code> + <code>Secure</code>; 14-day expiry; rotate <code>AUTH_SECRET</code> to revoke all.</td></tr>
+      <tr><td>Lockout used to deny a real user</td><td>Window is 15 min and self-clears; two users, low stakes. Acceptable.</td></tr>
+      <tr><td>Proxy gate breaks <code>/p/*</code> or the agent</td><td>Those stay in the public tier; covered by tests and by <code>mcp:verify</code>.</td></tr>
+      <tr><td>Preview deploys expose the UI</td><td><code>CRM_WEB_UI</code> is set on production only; previews stay locked (and are also behind Vercel's preview protection).</td></tr>
+    </tbody>
+  </table>
+
+  <h2 id="scope">Out of scope</h2>
+  <ul>
+    <li>2FA / passkeys — worth a later plan if more users are added.</li>
+    <li>Per-session revocation (session table or <code>users.session_version</code>). <code>AUTH_SECRET</code> rotation covers the two-user case.</li>
+    <li>Password reset by email.</li>
+    <li>Multi-tenant authorization — still single-tenant, as today.</li>
+    <li>Custom domain.</li>
+  </ul>
+
+  <h2 id="verify">Verification</h2>
+  <ol>
+    <li><code>npm run lint</code>, <code>npm test</code>, <code>npm run build</code>.</li>
+    <li>Local production build, UI off: <code>/accounts</code>, <code>/login</code> → 404; <code>/p/&lt;slug&gt;</code> renders styled; <code>/api/mcp</code> → 401.</li>
+    <li>Local production build, <code>CRM_WEB_UI=on</code>: anonymous <code>/accounts</code> → 302 <code>/login</code>; anonymous <code>/proposals/&lt;id&gt;/pdf</code> → 302; anonymous server-action POST → 401; login works and lands on <code>?next</code>; 6th bad password for one user is rejected.</li>
+    <li>Production after the flip: the same checks against <code>toprock-os.vercel.app</code>; <code>npm run mcp:verify</code> passes; <code>npm run mcp:role -- --audit-only</code> still reports no write access and no access to <code>login_attempts</code>.</li>
+    <li>Full CRM from a phone.</li>
+  </ol>
+
+  <footer>
+    Plan 009 · CRM web UI behind login · Toprock CRM.
+    Supersedes <a href="../007-private-deployment/plan.html">007 private deployment</a> (lockdown half).
+  </footer>
+</main>
+</body>
+</html>

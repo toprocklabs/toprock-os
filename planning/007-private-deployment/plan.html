@@ -24,6 +24,7 @@
   .status{display:inline-block;font-size:11px;font-weight:700;letter-spacing:.03em;padding:3px 11px;border-radius:20px;text-transform:capitalize}
   .s-proposed{color:var(--proposed);background:var(--proposed-bg)}
   .s-accepted{color:var(--accepted);background:var(--accepted-bg)}
+  .s-superseded{color:#8a8580;background:#efece8}
   .kicker{font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--accent);font-weight:600;margin-top:18px}
   h1{font-size:30px;margin:6px 0 6px;letter-spacing:-.01em}
   .lede{color:var(--muted);font-size:17px;margin:0 0 8px}
@@ -63,11 +64,14 @@
 <main>
   <div class="top">
     <a href="../index.html">← Planning index</a>
-    <span class="status s-accepted">Accepted</span>
+    <span class="status s-superseded">Superseded</span>
   </div>
 
   <div class="kicker">Plan · Feature 007</div>
   <h1>Private deployment &amp; data migration</h1>
+  <div class="callout warn" style="margin-top:14px">
+    <p style="margin:0"><strong>Lockdown superseded by <a href="../009-web-ui-behind-login/plan.html">plan 009</a>.</strong> The "no web UI at all" choice cost phone and any-machine access, as this plan predicted below. 009 opens the CRM behind the existing login instead, with a proxy-enforced session on every non-public path and a throttled login. The fail-closed rule survives as 009's <code>locked</code> mode (production without <code>CRM_WEB_UI=on</code>), and the data-migration half of this plan is unaffected.</p>
+  </div>
   <p class="lede">Put the CRM on Vercel so the agent can reach it, while the CRM itself has no public face: three paths answer from the internet, everything else returns 404. The UI exists only when you run it locally against the same database.</p>
 
   <div class="toc">

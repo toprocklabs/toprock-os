@@ -1,18 +1,21 @@
 ﻿import { login, redirectIfAuthenticated } from "@/app/login/actions";
+import { safeNextPath } from "@/lib/public-surface";
 
 type LoginPageProps = {
-  searchParams: Promise<{ error?: string }>;
+  searchParams: Promise<{ error?: string; next?: string }>;
 };
 
 const errorMessages: Record<string, string> = {
   invalid: "Invalid username or password.",
   config: "Server is missing DATABASE_URL.",
+  throttled: "Too many sign-in attempts. Try again in 15 minutes.",
 };
 
 export default async function LoginPage({ searchParams }: LoginPageProps) {
   await redirectIfAuthenticated();
 
   const params = await searchParams;
+  const next = safeNextPath(params.next);
   const errorText = params.error ? errorMessages[params.error] ?? "Unable to sign in." : null;
 
   return (
@@ -29,6 +32,7 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
         ) : null}
 
         <form action={login} className="mt-6 space-y-4">
+          {next ? <input type="hidden" name="next" value={next} /> : null}
           <label className="flex flex-col gap-1 text-sm text-slate-700">
             <span>Username</span>
             <input

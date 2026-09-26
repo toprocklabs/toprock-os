@@ -1,37 +1,40 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { isLandingPath, isLockedDown, isPubliclyAllowed, LANDING_HTML } from "@/lib/public-surface";
+import { classifyPath, safeNextPath, surfaceMode } from "@/lib/public-surface";
 
-describe("isPubliclyAllowed", () => {
-  it("allows the agent's MCP endpoint", () => {
-    assert.equal(isPubliclyAllowed("/api/mcp"), true);
-  });
-
-  it("allows client-facing proposal paths", () => {
-    for (const path of [
-      "/p/acme-retainer",
-      "/p/acme-retainer/terms",
-      "/p/acme-retainer/sign",
-    ]) {
-      assert.equal(isPubliclyAllowed(path), true, path);
+describe("classifyPath", () => {
+  it("keeps the agent's endpoints public", () => {
+    for (const path of ["/api/mcp", "/api/agent/health", "/api/agent/sync-repos"]) {
+      assert.equal(classifyPath(path), "public", path);
     }
   });
 
-  it("allows the static assets a proposal page needs to render", () => {
+  it("keeps client-facing proposal paths public", () => {
+    for (const path of ["/p/acme-retainer", "/p/acme-retainer/terms", "/p/acme-retainer/sign"]) {
+      assert.equal(classifyPath(path), "public", path);
+    }
+  });
+
+  it("keeps the static assets a proposal page needs public", () => {
     for (const path of [
       "/_next/static/css/abc123.css",
       "/_next/static/chunks/app/p/%5Bslug%5D/page-1.js",
       "/_next/image?url=%2Flogo.png",
       "/favicon.ico",
+      "/robots.txt",
     ]) {
-      assert.equal(isPubliclyAllowed(path), true, path);
+      assert.equal(classifyPath(path), "public", path);
     }
   });
 
-  it("blocks every CRM page, including the login form", () => {
+  it("gives the sign-in form its own tier", () => {
+    assert.equal(classifyPath("/login"), "login");
+    assert.equal(classifyPath("/login/extra"), "private");
+  });
+
+  it("puts every CRM page behind a session, signed PDFs included", () => {
     for (const path of [
       "/",
-      "/login",
       "/accounts",
       "/accounts/12",
       "/contacts",
@@ -46,64 +49,74 @@ describe("isPubliclyAllowed", () => {
       "/proposals/8/pdf",
       "/customers",
     ]) {
-      assert.equal(isPubliclyAllowed(path), false, path);
+      assert.equal(classifyPath(path), "private", path);
     }
   });
 
   it("does not let /proposals slip through the /p/ prefix", () => {
     // The classic prefix bug: startsWith("/p") would open the entire proposals
     // admin, signed PDFs included.
-    assert.equal(isPubliclyAllowed("/proposals"), false);
-    assert.equal(isPubliclyAllowed("/payments"), false);
-    assert.equal(isPubliclyAllowed("/p"), false);
+    assert.equal(classifyPath("/proposals"), "private");
+    assert.equal(classifyPath("/payments"), "private");
+    assert.equal(classifyPath("/p"), "private");
   });
 
-  it("blocks unknown and probing paths by default", () => {
+  it("treats unknown and probing paths as private by default", () => {
     for (const path of ["/api", "/api/health", "/api/mcp/extra", "/admin", "/.env", "/wp-login.php"]) {
-      assert.equal(isPubliclyAllowed(path), false, path);
+      assert.equal(classifyPath(path), "private", path);
     }
   });
 });
 
-describe("landing page", () => {
-  it("answers only the bare root", () => {
-    assert.equal(isLandingPath("/"), true);
-    for (const path of ["", "/index", "/index.html", "/?x", "//", "/accounts"]) {
-      assert.equal(isLandingPath(path), false, path);
+describe("surfaceMode", () => {
+  it("leaves local development open with no configuration", () => {
+    assert.equal(surfaceMode({ NODE_ENV: "development" }), "open");
+    assert.equal(surfaceMode({}), "open");
+  });
+
+  it("locks any production build by default, Vercel or not", () => {
+    assert.equal(surfaceMode({ NODE_ENV: "production" }), "locked");
+    assert.equal(surfaceMode({ NODE_ENV: "production", VERCEL: undefined }), "locked");
+  });
+
+  it("gates behind login only for the exact opt-in", () => {
+    assert.equal(surfaceMode({ NODE_ENV: "production", CRM_WEB_UI: "on" }), "gated");
+    for (const value of ["true", "1", "ON", "yes", ""]) {
+      assert.equal(surfaceMode({ NODE_ENV: "production", CRM_WEB_UI: value }), "locked", value);
     }
   });
 
-  it("keeps the root itself off the allowlist, so the dashboard never renders", () => {
-    assert.equal(isPubliclyAllowed("/"), false);
-  });
-
-  it("is static: no links, forms, scripts, or CRM names", () => {
-    for (const needle of ["<a", "<form", "<script", "href=", "login", "CRM", "api/"]) {
-      assert.equal(LANDING_HTML.includes(needle), false, needle);
-    }
+  it("ignores the retired all-open switch", () => {
+    assert.equal(surfaceMode({ NODE_ENV: "production", CRM_PUBLIC_SURFACE: "all" }), "locked");
   });
 });
 
-describe("isLockedDown", () => {
-  it("leaves local development wide open with no configuration", () => {
-    assert.equal(isLockedDown({ NODE_ENV: "development" }), false);
-    assert.equal(isLockedDown({}), false);
+describe("safeNextPath", () => {
+  it("keeps same-origin paths with their query", () => {
+    assert.equal(safeNextPath("/accounts"), "/accounts");
+    assert.equal(safeNextPath("/accounts/12?tab=notes"), "/accounts/12?tab=notes");
   });
 
-  it("locks any production build, Vercel or not", () => {
-    assert.equal(isLockedDown({ NODE_ENV: "production" }), true);
-    assert.equal(isLockedDown({ NODE_ENV: "production", VERCEL: undefined }), true);
-  });
-
-  it("opens only for the explicit opt-out", () => {
-    assert.equal(isLockedDown({ NODE_ENV: "production", CRM_PUBLIC_SURFACE: "all" }), false);
-    // Anything other than the exact value keeps the wall up.
-    for (const value of ["true", "1", "ALL", "yes", ""]) {
-      assert.equal(
-        isLockedDown({ NODE_ENV: "production", CRM_PUBLIC_SURFACE: value }),
-        true,
-        value,
-      );
+  it("rejects anything that could leave the site", () => {
+    for (const value of [
+      "//evil.com",
+      "/\\evil.com",
+      "https://evil.com",
+      "javascript:alert(1)",
+      "evil.com",
+      "/acc\\ounts",
+      "/accounts\nSet-Cookie:x",
+      "",
+      null,
+      undefined,
+      42,
+    ]) {
+      assert.equal(safeNextPath(value), null, String(value));
     }
+  });
+
+  it("does not bounce back to the login form", () => {
+    assert.equal(safeNextPath("/login"), null);
+    assert.equal(safeNextPath("/login?error=invalid"), null);
   });
 });
