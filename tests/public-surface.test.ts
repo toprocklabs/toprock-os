@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { isLockedDown, isPubliclyAllowed } from "@/lib/public-surface";
+import { isLandingPath, isLockedDown, isPubliclyAllowed, LANDING_HTML } from "@/lib/public-surface";
 
 describe("isPubliclyAllowed", () => {
   it("allows the agent's MCP endpoint", () => {
@@ -61,6 +61,25 @@ describe("isPubliclyAllowed", () => {
   it("blocks unknown and probing paths by default", () => {
     for (const path of ["/api", "/api/health", "/api/mcp/extra", "/admin", "/.env", "/wp-login.php"]) {
       assert.equal(isPubliclyAllowed(path), false, path);
+    }
+  });
+});
+
+describe("landing page", () => {
+  it("answers only the bare root", () => {
+    assert.equal(isLandingPath("/"), true);
+    for (const path of ["", "/index", "/index.html", "/?x", "//", "/accounts"]) {
+      assert.equal(isLandingPath(path), false, path);
+    }
+  });
+
+  it("keeps the root itself off the allowlist, so the dashboard never renders", () => {
+    assert.equal(isPubliclyAllowed("/"), false);
+  });
+
+  it("is static: no links, forms, scripts, or CRM names", () => {
+    for (const needle of ["<a", "<form", "<script", "href=", "login", "CRM", "api/"]) {
+      assert.equal(LANDING_HTML.includes(needle), false, needle);
     }
   });
 });

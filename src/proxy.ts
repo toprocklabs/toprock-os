@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { isLockedDown, isPubliclyAllowed } from "@/lib/public-surface";
+import { isLandingPath, isLockedDown, isPubliclyAllowed, LANDING_HTML } from "@/lib/public-surface";
 
 // Next.js 16 renamed `middleware.ts` to `proxy.ts` and it now defaults to the
 // Node.js runtime. See node_modules/next/dist/docs/01-app/03-api-reference/
@@ -12,8 +12,20 @@ import { isLockedDown, isPubliclyAllowed } from "@/lib/public-surface";
 // confirm something is there and being withheld.
 
 export function proxy(request: NextRequest) {
-  if (isLockedDown() && !isPubliclyAllowed(request.nextUrl.pathname)) {
-    return new NextResponse(null, { status: 404 });
+  if (isLockedDown()) {
+    const { pathname } = request.nextUrl;
+
+    // Answered here so the dashboard at `/` never runs; see isLandingPath.
+    if (isLandingPath(pathname)) {
+      return new NextResponse(request.method === "HEAD" ? null : LANDING_HTML, {
+        status: 200,
+        headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" },
+      });
+    }
+
+    if (!isPubliclyAllowed(pathname)) {
+      return new NextResponse(null, { status: 404 });
+    }
   }
 
   return NextResponse.next();
