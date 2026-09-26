@@ -43,7 +43,7 @@ Check `node_modules/next/dist/docs/` when changing framework behavior.
 - `src/lib/github/sync-repos.ts` shared GitHub org → `project_repos` reconcile (CLI + agent tool)
 - `src/app/api/mcp/` Streamable HTTP MCP endpoint
 - `src/app/api/agent/` small REST companions (`/health`, `/sync-repos`)
-- `src/proxy.ts` public-surface wall (Next 16 renamed `middleware.ts` → `proxy.ts`); allowlist in `src/lib/public-surface.ts`
+- `src/proxy.ts` public-surface gate (Next 16 renamed `middleware.ts` → `proxy.ts`): session check for private paths; classification in `src/lib/public-surface.ts`
 - `src/components/` shared UI helpers (`crm-shell`, autosave fields, call link, collapsible form section)
 - `drizzle/` generated migrations
 - `tests/` `node:test` suites for pure logic — run with `npm test`
@@ -74,6 +74,7 @@ Check `node_modules/next/dist/docs/` when changing framework behavior.
 
 ## Data Model (Drizzle)
 - `users` (local auth users)
+- `login_attempts` (per-attempt log for `/login` throttling; pruned after 30 days)
 - `companies` (UI term: Accounts)
 - `contacts`
 - `deals`
@@ -199,15 +200,21 @@ Money fields (`valueCents` / `implementationCostCents`) are rejected unless `evi
 ### Tests
 Auth rejection, payload validation, suggestion insert shape, MCP initialize/list, and repo-sync planning live under `tests/agent-*.test.ts` and `tests/github-sync-repos.test.ts`. Tool classification lives in `tests/agent-tool-classification.test.ts`.
 
-## Private deployment (plan 007)
-- **The CRM is a local-only app that happens to be deployed.** It is hosted for one reason: the PM agent runs in the cloud and cannot reach `localhost`. Austin and his brother both run it with `npm run dev` against the shared Neon database; there is no web UI for anyone.
-- `src/proxy.ts` returns a bodiless **404** in production for every path not in the allowlist in `src/lib/public-surface.ts`. Publicly reachable: `POST /api/mcp`, `/api/agent/*`, `/p/*` (client SOWs), `/_next/*`, `/favicon.ico`, `/robots.txt`. Everything else — **including `/login`** — 404s, so the deployment has no human authentication surface at all.
-- One exception: bare `/` returns a static "Toprock · private service" placeholder (`LANDING_HTML` in `public-surface.ts`), served by the proxy itself so the data-bearing dashboard never runs. It exists so the root domain and Vercel's dashboard thumbnail don't look like an outage. `/` stays off the allowlist; keep the page free of links, forms, scripts, and CRM names (the test enforces this).
-- 404 not 403, deliberately: a 403 confirms something exists and is being withheld.
-- **Default deny.** A route added later is private until someone allowlists it on purpose — add it to `src/lib/public-surface.ts` *and* `tests/public-surface.test.ts`.
-- Lockdown keys off `NODE_ENV === "production"` (not Vercel's own flag, so a deploy anywhere else is locked too) and lifts only for the exact opt-out `CRM_PUBLIC_SURFACE=all`. `npm run dev` is unaffected and needs no configuration.
-- **Never set `CRM_PUBLIC_SURFACE=all` in a deployed environment**, and do not turn on Vercel Deployment Protection instead — it blocks the agent and client SOW pages equally. If someone needs web access, add one gated route and supersede plan 007 rather than flipping either switch.
-- Allowing `/_next/*` leaks nothing: those bundles build from a public repo and contain no CRM rows. Server-rendered data is fetched at the page's own path (`/accounts?_rsc=…`) and is blocked with the page — verified.
+## Web UI behind login (plan 009, supersedes plan 007's lockdown)
+- The CRM is usable at the Vercel URL behind the existing username/password session. `src/proxy.ts` classifies every path with `classifyPath()` in `src/lib/public-surface.ts`:
+  - **public** — `/api/mcp`, `/api/agent/*`, `/p/*`, `/_next/*`, `/favicon.ico`, `/robots.txt`. Served to anyone; each has its own gate (bearer / PIN).
+  - **login** — `/login`. Served to anyone; rate-limited in the action.
+  - **private** — everything else, **including any route added later**. The proxy verifies the `crm_session` JWT before the route runs: anonymous GET → 307 to `/login?next=…`, anything else → 401. Pages and actions still call `requireUser()` / `defineAction` too — both layers must pass.
+- **Default deny.** A new route is signed-in-only until someone adds it to the public list on purpose — change `src/lib/public-surface.ts` *and* `tests/public-surface.test.ts`.
+- **The switch:** `surfaceMode()` is `open` in development (proxy stays out of the way), `gated` in production only when `CRM_WEB_UI=on` (exact value), and `locked` otherwise — plan 007's bodiless 404 for every non-public path, `/login` included. Set `CRM_WEB_UI` on Vercel **production only**; removing it + redeploying is the kill switch. `CRM_PUBLIC_SURFACE=all` is retired and ignored.
+- The session check lives in `src/lib/session-token.ts` (no `next/headers`), shared by the proxy and `getSession()`.
+- **Login throttling** (`src/lib/login-throttle.ts`, table `login_attempts`): 5 failures per username (since its last success) or 20 per IP within 15 minutes → `error=throttled`. Counts are in Postgres because Fluid Compute runs several instances. Unknown usernames still pay a bcrypt compare against a dummy hash. Rows older than 30 days are pruned by the login action. `login_attempts` is deliberately **not** granted to the MCP read-only role.
+- `user:create` requires passwords ≥ 12 characters.
+- The proxy adds `X-Robots-Tag: noindex, nofollow` everywhere, plus `X-Frame-Options: DENY` and `Referrer-Policy: same-origin` on login and private responses.
+- `?next=` is sanitized by `safeNextPath()` (same-origin paths only) — never redirect to a raw query value.
+- Sign out everyone = rotate `AUTH_SECRET` in Vercel and redeploy.
+- Allowing `/_next/*` leaks nothing: those bundles build from a public repo and contain no CRM rows. Server-rendered data is fetched at the page's own path (`/accounts?_rsc=…`) and is gated with the page.
+- **Do not run `npm run db:push` against the shared database without reading its prompts.** The live DB has tables this schema doesn't define (`brain_documents`, `brain_document_links`, `meetings`, `meeting_companies`, `meeting_action_items`); push will offer to drop or rename them. Apply reviewed `drizzle/*.sql` instead.
 
 ## When Editing Existing Features
 - If touching contact profile editing, preserve blur autosave behavior.
@@ -234,7 +241,7 @@ Auth rejection, payload validation, suggestion insert shape, MCP initialize/list
 - If account stage touched: verify `/accounts` create flow and `/accounts/[id]` stage updates
 - If opportunity workflow touched: verify `/opportunities/[id]` save + stage updates + timeline logging
 - If proposals touched: verify `/proposals` create/edit, the public `/p/[slug]` PIN gate + render, and (for signing changes) an end-to-end test signature against a throwaway proposal row
-- If `proxy.ts` or the public surface touched: `npm run build && npm start`, then confirm `/accounts` and `/login` return 404 while `/p/<slug>` renders **with styling** and `/api/mcp` answers (401/503, not 404)
+- If `proxy.ts` or the public surface touched: `npm run build`, then check both modes. `npm start`: `/accounts` and `/login` 404. `CRM_WEB_UI=on npm start`: anonymous `/accounts` 307s to `/login?next=%2Faccounts`, anonymous `POST /accounts` 401s, login works. In both, `/p/<slug>` renders **with styling** and `/api/mcp` answers (401/503, not 404)
 - If the agent API touched: `npm run mcp:verify -- --url <deployed>/api/mcp --token <token>` must pass every check, and `npm run mcp:role -- --audit-only` must still report write access nowhere
 - If project repos touched: run `npm run sync:repos -- --dry-run`, then confirm `/accounts` sorts by Last push in both directions with unlinked accounts pinned last
 

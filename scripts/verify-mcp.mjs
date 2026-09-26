@@ -4,7 +4,7 @@ config({ path: ".env.local" });
 config();
 
 // End-to-end check of a deployed agent MCP endpoint + the public-surface wall
-// (planning/007-private-deployment, planning/008-agent-mcp-hardening).
+// (planning/009-web-ui-behind-login, planning/008-agent-mcp-hardening).
 //
 // This is the AGENTS.md hand-off checklist as a command: run it against the
 // deployment before pointing the agent at it, and again after any change.
@@ -52,8 +52,9 @@ const READ_TOOLS = [
 const WRITE_TOOLS = ["propose_suggestion", "sync_project_repos"];
 const EXPECTED_TOOLS = [...READ_TOOLS, ...WRITE_TOOLS].sort();
 
-// Paths that must NOT answer from the internet (plan 007).
-const MUST_BE_404 = ["/", "/login", "/accounts", "/proposals", "/payments", "/inbox"];
+// CRM paths that must never render for an anonymous visitor. With the web UI
+// off they 404 (plan 007); with CRM_WEB_UI=on they redirect to /login (plan 009).
+const PRIVATE_PATHS = ["/", "/accounts", "/proposals", "/proposals/1/pdf", "/payments", "/inbox"];
 
 let id = 0;
 let failures = 0;
@@ -96,10 +97,28 @@ const rows = (response) => {
 console.log(`\nVerifying ${url}\n`);
 
 // --- the public-surface wall ------------------------------------------------
-console.log("  Public surface (plan 007)");
-for (const path of MUST_BE_404) {
+const loginPage = await fetch(`${origin}/login`, { redirect: "manual" });
+const gated = loginPage.status === 200;
+console.log(`  Public surface (${gated ? "plan 009: web UI behind login" : "plan 007: locked"})`);
+if (!gated) {
+  check("/login is not reachable", loginPage.status === 404, `got ${loginPage.status}`);
+}
+for (const path of PRIVATE_PATHS) {
   const response = await fetch(`${origin}${path}`, { redirect: "manual" });
-  check(`${path} is not reachable`, response.status === 404, `got ${response.status}`);
+  if (gated) {
+    const location = response.headers.get("location") ?? "";
+    check(
+      `${path} redirects anonymous visitors to /login`,
+      response.status === 307 && new URL(location, origin).pathname === "/login",
+      `got ${response.status} ${location}`,
+    );
+  } else {
+    check(`${path} is not reachable`, response.status === 404, `got ${response.status}`);
+  }
+}
+if (gated) {
+  const action = await fetch(`${origin}/accounts`, { method: "POST", redirect: "manual" });
+  check("anonymous POST to a CRM page is refused", action.status === 401, `got ${action.status}`);
 }
 
 // --- auth -------------------------------------------------------------------

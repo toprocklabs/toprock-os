@@ -1,21 +1,29 @@
-// Which paths answer from the internet (planning/007-private-deployment).
+// Which paths answer from the internet, and on what terms
+// (planning/009-web-ui-behind-login, superseding the lockdown in 007).
 //
-// The CRM is a local-only app. It is deployed at all for one reason: Grok Bot
-// runs in Discord's cloud and cannot reach localhost, so its MCP endpoint has
-// to be somewhere public. Client SOW pages come along because clients have to
-// open and sign them.
+// Three tiers:
+//   public  — the agent API and client SOW pages, each with its own gate
+//             (bearer token / proposal PIN). Served to anyone.
+//   login   — the sign-in form. Served to anyone, rate-limited in the action.
+//   private — everything else, including any route added later. Needs a valid
+//             session cookie, checked in the proxy before the route runs.
 //
-// Everything else — including /login — returns 404 in production, so the
-// deployment has no authentication surface to attack at all.
-//
-// Default deny: a route added later is private until someone allowlists it here
-// on purpose.
+// Default deny: a new route is private until someone adds it here on purpose.
+
+export type Surface = "public" | "login" | "private";
+
+/**
+ * How the proxy treats private paths.
+ *
+ *   open   — local development: the proxy stays out of the way and each page's
+ *            own requireUser() redirects to /login.
+ *   gated  — production with CRM_WEB_UI=on: private paths need a session.
+ *   locked — production otherwise: private paths and /login 404 (plan 007).
+ */
+export type SurfaceMode = "open" | "gated" | "locked";
 
 /** Exact paths that answer publicly. */
-const ALLOWED_EXACT = new Set(["/api/mcp", "/favicon.ico", "/robots.txt"]);
-
-/** The agent's own endpoints, each gated by CRM_AGENT_TOKEN. */
-const ALLOWED_AGENT_PREFIX = "/api/agent/";
+const PUBLIC_EXACT = new Set(["/api/mcp", "/favicon.ico", "/robots.txt"]);
 
 /**
  * Prefixes that answer publicly.
@@ -23,62 +31,64 @@ const ALLOWED_AGENT_PREFIX = "/api/agent/";
  * `/_next/` is compiled client JS and CSS. Allowing it leaks nothing: those
  * bundles are built from a public repository, and no CRM row is ever baked into
  * one. Server-rendered data is fetched at the page's own path (`/accounts?_rsc=…`)
- * and is blocked with the page.
+ * and is gated with the page.
  */
-const ALLOWED_PREFIXES = ["/_next/", "/p/", ALLOWED_AGENT_PREFIX];
+const PUBLIC_PREFIXES = ["/_next/", "/p/", "/api/agent/"];
 
-export function isPubliclyAllowed(pathname: string) {
-  if (ALLOWED_EXACT.has(pathname)) {
-    return true;
+export const LOGIN_PATH = "/login";
+
+export function classifyPath(pathname: string): Surface {
+  if (pathname === LOGIN_PATH) {
+    return "login";
+  }
+
+  if (PUBLIC_EXACT.has(pathname)) {
+    return "public";
   }
 
   // `/p` alone is not a proposal; `/proposals` must not match the `/p/` prefix,
   // which is why these are compared with the trailing slash included.
-  return ALLOWED_PREFIXES.some((prefix) => pathname.startsWith(prefix));
+  return PUBLIC_PREFIXES.some((prefix) => pathname.startsWith(prefix)) ? "public" : "private";
 }
 
 /**
- * The root answers with a fixed placeholder instead of a 404, so the bare
- * domain (and Vercel's dashboard screenshot of it) doesn't look like an outage.
- *
- * `/` is deliberately NOT on the allowlist: in the app it is the dashboard, which
- * renders CRM data. The proxy answers it itself with this static page and the
- * request never reaches the app. It names nothing, links nothing, and has no form.
- */
-export function isLandingPath(pathname: string) {
-  return pathname === "/";
-}
-
-export const LANDING_HTML = `<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="robots" content="noindex">
-<title>Toprock</title>
-<style>
-  html, body { height: 100%; margin: 0; }
-  body { display: grid; place-items: center; background: #0f172a; color: #cbd5e1;
-         font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
-  p { margin: 0; letter-spacing: 0.02em; }
-</style>
-</head>
-<body><p>Toprock &middot; private service</p></body>
-</html>
-`;
-
-/**
- * Locked in production unless explicitly opened.
+ * Locked in production unless the web UI is explicitly turned on.
  *
  * Keyed off NODE_ENV rather than Vercel's own flag so that a deployment
  * anywhere else is locked too, instead of failing open because one vendor's
- * environment variable happened to be missing. `npm run dev` is development, so
- * local work needs no configuration at all.
+ * environment variable happened to be missing. Only the exact value `on` opens
+ * the gate, and even then only to signed-in users.
  */
-export function isLockedDown(env: NodeJS.ProcessEnv = process.env) {
-  if (env.CRM_PUBLIC_SURFACE === "all") {
-    return false;
+export function surfaceMode(env: NodeJS.ProcessEnv = process.env): SurfaceMode {
+  if (env.NODE_ENV !== "production") {
+    return "open";
   }
 
-  return env.NODE_ENV === "production";
+  return env.CRM_WEB_UI === "on" ? "gated" : "locked";
+}
+
+/**
+ * The post-login destination, if it is a same-origin path.
+ *
+ * Anything that could leave the site — `//evil.com`, `/\evil.com`, a scheme,
+ * control characters — falls back to null so the caller uses `/`.
+ */
+export function safeNextPath(raw: unknown): string | null {
+  if (typeof raw !== "string" || raw.length === 0 || raw.length > 512) {
+    return null;
+  }
+
+  if (!raw.startsWith("/") || raw.startsWith("//") || raw.startsWith("/\\")) {
+    return null;
+  }
+
+  if (/[\u0000-\u001f\u007f\\]/.test(raw)) {
+    return null;
+  }
+
+  if (raw === LOGIN_PATH || raw.startsWith(`${LOGIN_PATH}?`)) {
+    return null;
+  }
+
+  return raw;
 }
