@@ -21,7 +21,7 @@ Check `node_modules/next/dist/docs/` when changing framework behavior.
    - `AUTH_SECRET=...` (>= 32 chars)
    - `CRM_AGENT_TOKEN=...` (>= 32 chars) — machine auth for `/api/mcp` (Paul / PM agents). Do not reuse `AUTH_SECRET`.
    - optional: `GITHUB_TOKEN` + `GITHUB_ORG` (default `toprocklabs`) for `npm run sync:repos` and the agent `sync_project_repos` tool
-   - optional: `CRM_AGENT_AUTO_APPLY=true` to auto-apply high-confidence suggestions (off by default; stage/money/account updates never auto-apply)
+   - optional: `CRM_AGENT_AUTO_APPLY=true` to auto-apply high-confidence suggestions (off by default). When enabled, any kind listed in `CRM_AGENT_AUTO_APPLY_KINDS` (default `log_activity`) at or above `CRM_AGENT_AUTO_APPLY_MIN_CONFIDENCE` (default 95) applies immediately — including `stage_change`, `new_deal`, `update_deal`, and `update_account`.
 3. Sync DB schema:
    - `npm run db:generate`
    - `npm run db:push`
@@ -184,7 +184,7 @@ External PM agents keep the CRM current from meetings and git activity **without
 Money fields (`valueCents` / `implementationCostCents`) are rejected unless `evidence` cites a number.
 
 ### Safety rules (also sent as MCP `instructions`)
-- **Propose, don't apply.** Default path is `/inbox`. Auto-apply requires `CRM_AGENT_AUTO_APPLY=true` and high confidence (`CRM_AGENT_AUTO_APPLY_MIN_CONFIDENCE`, default 95). Allowlist default is `log_activity` only (`CRM_AGENT_AUTO_APPLY_KINDS`). `stage_change`, `new_deal`, `update_deal`, and `update_account` never auto-apply.
+- **Propose, don't apply.** Default path is `/inbox`. Auto-apply requires `CRM_AGENT_AUTO_APPLY=true` and high confidence (`CRM_AGENT_AUTO_APPLY_MIN_CONFIDENCE`, default 95). Allowlist default is `log_activity` only (`CRM_AGENT_AUTO_APPLY_KINDS`). Any listed kind auto-applies, including `stage_change`, `new_deal`, `update_deal`, and `update_account`.
 - **Do not invent deal values.** Omit MRR / implementation cost unless a meeting, email, or signed SOW stated the number.
 - **Stage changes need evidence.** No speculative pipeline movement.
 - **Never contact clients.** This API does not send mail, place calls, or message anyone.
