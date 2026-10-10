@@ -45,3 +45,25 @@ export function agentAuthResponse(request: Request) {
 export function optionsResponse() {
   return emptyWithCors({ status: 204 });
 }
+
+/**
+ * Streamable HTTP uses 405 as the definitive "this method is not offered" signal.
+ * Clients stop opening a GET SSE stream, or stop trying to DELETE a session,
+ * only when they see 405 — any other status is a transport error they retry.
+ */
+export function methodNotAllowed(allow: string, message = "Method not allowed.") {
+  return jsonWithCors(
+    {
+      jsonrpc: "2.0",
+      id: null,
+      error: { code: -32000, message },
+    },
+    {
+      status: 405,
+      headers: {
+        Allow: allow,
+        "Access-Control-Allow-Methods": allow,
+      },
+    },
+  );
+}

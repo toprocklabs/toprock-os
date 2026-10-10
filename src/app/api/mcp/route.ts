@@ -1,12 +1,6 @@
 import { randomUUID } from "node:crypto";
-import { agentAuthResponse, emptyWithCors, jsonWithCors, optionsResponse } from "@/lib/agent/http";
-import {
-  handleMcpBody,
-  MCP_DEFAULT_PROTOCOL,
-  MCP_SERVER_NAME,
-  MCP_SERVER_VERSION,
-  parseJsonBody,
-} from "@/lib/agent/mcp";
+import { agentAuthResponse, emptyWithCors, jsonWithCors, methodNotAllowed } from "@/lib/agent/http";
+import { handleMcpBody, MCP_DEFAULT_PROTOCOL, parseJsonBody } from "@/lib/agent/mcp";
 import { AgentToolError, dispatchAgentTool } from "@/lib/agent/tools";
 import { getDb, getReadOnlyDb } from "@/lib/db";
 
@@ -14,42 +8,46 @@ export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
+// POST carries JSON-RPC. OPTIONS is the CORS preflight. GET is intentionally
+// rejected: this server never pushes server-initiated messages, so it must not
+// answer the optional SSE stream with a 200 that ends immediately.
+const MCP_ALLOW = "POST, OPTIONS";
+
 function sessionHeaders(request: Request) {
   return {
     "Mcp-Session-Id": request.headers.get("mcp-session-id") ?? randomUUID(),
     "MCP-Protocol-Version": request.headers.get("mcp-protocol-version") ?? MCP_DEFAULT_PROTOCOL,
+    // Shared CORS still lists GET for the other agent routes. This endpoint does not.
+    "Access-Control-Allow-Methods": MCP_ALLOW,
   };
 }
 
 export function OPTIONS() {
-  return optionsResponse();
-}
-
-export function GET(request: Request) {
-  const denied = agentAuthResponse(request);
-  if (denied) {
-    return denied;
-  }
-
-  return jsonWithCors(
-    {
-      name: MCP_SERVER_NAME,
-      version: MCP_SERVER_VERSION,
-      transport: "streamable-http",
-      protocolVersion: MCP_DEFAULT_PROTOCOL,
-      endpoint: "/api/mcp",
-      auth: "Authorization: Bearer <CRM_AGENT_TOKEN>",
+  return emptyWithCors({
+    status: 204,
+    headers: {
+      Allow: MCP_ALLOW,
+      "Access-Control-Allow-Methods": MCP_ALLOW,
     },
-    { headers: sessionHeaders(request) },
-  );
+  });
 }
 
-export function DELETE(request: Request) {
-  const denied = agentAuthResponse(request);
-  if (denied) {
-    return denied;
-  }
-  return emptyWithCors({ status: 200, headers: sessionHeaders(request) });
+// Spec (2025-03-26 Streamable HTTP): a GET either opens `text/event-stream`
+// or returns 405. A JSON 200 that closes is a dropped stream. Clients such as
+// the TypeScript and Python SDKs then reconnect, and only a 405 stops them.
+// Answer 405 before auth so a missing token cannot turn the same loop into 401s.
+export function GET() {
+  return methodNotAllowed(MCP_ALLOW, "Method not allowed. This server does not offer an SSE stream.");
+}
+
+// No session is stored. 405 is the spec's signal that clients cannot terminate
+// one. A 200 here also minted a fresh Mcp-Session-Id whenever the header was
+// absent, which told clients a session existed.
+export function DELETE() {
+  return methodNotAllowed(
+    MCP_ALLOW,
+    "Method not allowed. This server does not support session termination.",
+  );
 }
 
 export async function POST(request: Request) {
