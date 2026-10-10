@@ -157,7 +157,7 @@ External PM agents keep the CRM current from meetings and git activity **without
 1. Set `CRM_AGENT_TOKEN` in the deployment env (>= 32 chars). Never commit it.
 2. MCP URL: `https://<host>/api/mcp`
 3. Header: `Authorization: Bearer <CRM_AGENT_TOKEN>`
-4. Transport: Streamable HTTP JSON-RPC (`initialize` → `notifications/initialized` → `tools/list` / `tools/call`). `GET /api/mcp` with the same bearer returns server metadata.
+4. Transport: Streamable HTTP JSON-RPC (`initialize` → `notifications/initialized` → `tools/list` / `tools/call`). `GET /api/mcp` returns `405` with `Allow: POST, OPTIONS` — this server does not open a server-initiated SSE stream, and a `200` that ends immediately makes clients reconnect in a loop. `DELETE` is also `405` (no session store). `OPTIONS` is a CORS preflight.
 5. REST backups: `GET /api/agent/health`, `POST /api/agent/sync-repos` (`{ "dryRun": true }` optional). Same bearer. Useful for curl / a later cron — do not invent an in-app cron.
 
 ### Tools

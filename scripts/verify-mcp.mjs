@@ -129,6 +129,39 @@ check("no Authorization header is rejected", noAuth.status === 401, `got ${noAut
 const badAuth = await rpc({ jsonrpc: "2.0", id: 1, method: "tools/list" }, { auth: "wrong-token" });
 check("a wrong bearer token is rejected", badAuth.status === 401, `got ${badAuth.status}`);
 
+// --- transport --------------------------------------------------------------
+console.log("\n  Transport");
+const getStream = await fetch(url, {
+  method: "GET",
+  headers: {
+    Accept: "text/event-stream",
+    Authorization: `Bearer ${token}`,
+  },
+  redirect: "manual",
+});
+await getStream.text().catch(() => {});
+const allowMethods = (getStream.headers.get("allow") ?? "")
+  .split(",")
+  .map((part) => part.trim().toUpperCase())
+  .filter(Boolean);
+check(
+  "GET returns 405 so clients do not reconnect a dropped SSE stream",
+  getStream.status === 405 && allowMethods.includes("POST") && !allowMethods.includes("GET"),
+  `got ${getStream.status} allow=${getStream.headers.get("allow") || "(none)"}`,
+);
+
+const deleteSession = await fetch(url, {
+  method: "DELETE",
+  headers: { Authorization: `Bearer ${token}` },
+  redirect: "manual",
+});
+await deleteSession.text().catch(() => {});
+check(
+  "DELETE returns 405 because the server does not keep sessions",
+  deleteSession.status === 405,
+  `got ${deleteSession.status}`,
+);
+
 // --- handshake --------------------------------------------------------------
 console.log("\n  Protocol");
 const init = await rpc({
