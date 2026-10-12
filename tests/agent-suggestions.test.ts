@@ -43,6 +43,121 @@ describe("parseProposeSuggestion", () => {
 
     assert.equal(parsed.payload.phone, "(801) 555-0123");
     assert.equal(parsed.payload.email, "dana@example.com");
+    assert.equal(parsed.payload.linkedinProfileUrl, null);
+  });
+
+  it("accepts null and blank optional contact fields and stores them as null", () => {
+    const evidence = "She introduced herself on the 2026-09-12 call.";
+    const cases = [
+      {
+        phone: null,
+        title: null,
+        linkedinProfileUrl: null,
+        companyId: null,
+      },
+      {
+        phone: "",
+        title: "",
+        linkedinProfileUrl: "",
+        companyId: null,
+      },
+      {
+        phone: "   ",
+        title: "   ",
+        linkedinProfileUrl: "   ",
+      },
+    ];
+
+    for (const payload of cases) {
+      const parsed = parseProposeSuggestion({
+        kind: "new_contact",
+        title: "Add Dana as primary contact",
+        evidence,
+        confidence: 80,
+        payload: {
+          firstName: "Dana",
+          lastName: "Miles",
+          email: "dana@example.com",
+          ...payload,
+        },
+      });
+
+      assert.equal(parsed.payload.phone, null);
+      assert.equal(parsed.payload.title, null);
+      assert.equal(parsed.payload.linkedinProfileUrl, null);
+      assert.equal(parsed.payload.companyId, null);
+      assert.equal(parsed.payload.email, "dana@example.com");
+
+      const again = parseProposeSuggestion({
+        kind: "new_contact",
+        title: "Add Dana as primary contact",
+        evidence,
+        confidence: 80,
+        payload: parsed.payload,
+      });
+      assert.deepEqual(again.payload, parsed.payload);
+    }
+  });
+
+  it("keeps a real LinkedIn URL and rejects a placeholder", () => {
+    const parsed = parseProposeSuggestion({
+      kind: "new_contact",
+      title: "Add Dana as primary contact",
+      evidence: "She introduced herself on the 2026-09-12 call.",
+      confidence: 80,
+      payload: {
+        firstName: "Dana",
+        lastName: "Miles",
+        email: "dana@example.com",
+        linkedinProfileUrl: "linkedin.com/in/dana",
+        phone: null,
+      },
+    });
+    assert.equal(parsed.payload.linkedinProfileUrl, "https://linkedin.com/in/dana");
+
+    assert.throws(
+      () =>
+        parseProposeSuggestion({
+          kind: "new_contact",
+          title: "Add Dana as primary contact",
+          evidence: "She introduced herself on the 2026-09-12 call.",
+          confidence: 80,
+          payload: {
+            firstName: "Dana",
+            lastName: "Miles",
+            email: "dana@example.com",
+            linkedinProfileUrl: "none",
+          },
+        }),
+      (error: unknown) => {
+        assert.ok(error instanceof SuggestionValidationError);
+        assert.match(error.issues.join(" "), /linkedinProfileUrl: Invalid URL/);
+        return true;
+      },
+    );
+  });
+
+  it("still rejects a null email", () => {
+    assert.throws(
+      () =>
+        parseProposeSuggestion({
+          kind: "new_contact",
+          title: "Add Dana as primary contact",
+          evidence: "She introduced herself on the 2026-09-12 call.",
+          confidence: 80,
+          payload: {
+            firstName: "Dana",
+            lastName: "Miles",
+            email: null,
+            linkedinProfileUrl: null,
+          },
+        }),
+      (error: unknown) => {
+        assert.ok(error instanceof SuggestionValidationError);
+        assert.match(error.issues.join(" "), /email:/);
+        return true;
+      },
+    );
   });
 
   it("requires an attachment target on log_activity", () => {

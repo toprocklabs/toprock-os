@@ -17,6 +17,7 @@ import { SuggestionValidationError } from "@/lib/agent/suggestion-kinds";
 import { activities, agentRuns, companies, contacts, deals, payments, placeEnrichment, proposals, relationships, salesTasks, stripeSubscriptions, suggestions, users } from "@/lib/schema";
 import { generatePin } from "@/lib/proposal/pin";
 import { parsePricingTotals } from "@/lib/proposal/markdown";
+import { optionalBlankTextSchema, optionalContactUrlSchema } from "@/lib/contact-fields";
 import { cleanOptionalText, mergeDateWithTime, normalizeUrl, normalizeUsPhone } from "@/lib/normalize";
 
 const optionalCompanyIndustrySchema = z.enum(companyIndustries).optional().or(z.literal(""));
@@ -36,9 +37,9 @@ const contactSchema = z.object({
   firstName: z.string().trim().min(1),
   lastName: z.string().trim().min(1),
   email: z.string().trim().email().optional().or(z.literal("")),
-  phone: z.string().trim().optional(),
-  linkedinProfileUrl: z.string().trim().optional(),
-  title: z.string().trim().optional(),
+  phone: optionalBlankTextSchema,
+  linkedinProfileUrl: optionalContactUrlSchema,
+  title: optionalBlankTextSchema,
   companyId: z.coerce.number().int().positive().optional(),
 });
 
@@ -122,7 +123,7 @@ const activityDateUpdateSchema = z.object({
 const contactFieldUpdateSchema = z.object({
   contactId: z.coerce.number().int().positive(),
   field: z.enum(["title", "email", "phone", "linkedinProfileUrl"]),
-  value: z.string().optional(),
+  value: z.string().nullish(),
   returnPath: z.string().optional(),
 });
 
@@ -202,7 +203,7 @@ export const createContact = defineAction({
     lastName: parsed.lastName,
     email: cleanOptionalText(parsed.email),
     phone: normalizeUsPhone(parsed.phone),
-    linkedinProfileUrl: normalizeUrl(cleanOptionalText(parsed.linkedinProfileUrl)),
+    linkedinProfileUrl: parsed.linkedinProfileUrl,
     title: cleanOptionalText(parsed.title),
     companyId: parsed.companyId ?? null,
   });
@@ -243,7 +244,7 @@ export const updateContactField = defineAction({
   if (parsed.field === "linkedinProfileUrl") {
     await db
       .update(contacts)
-      .set({ linkedinProfileUrl: normalizeUrl(cleanOptionalText(parsed.value)) })
+      .set({ linkedinProfileUrl: optionalContactUrlSchema.parse(parsed.value) })
       .where(eq(contacts.id, parsed.contactId));
   }
 

@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 import {
   cleanOptionalText,
   mergeDateWithTime,
+  normalizeContactUrl,
   normalizeUrl,
   normalizeUsPhone,
 } from "@/lib/normalize";
@@ -10,6 +11,7 @@ import {
 describe("cleanOptionalText", () => {
   it("returns null for empty and whitespace-only input", () => {
     assert.equal(cleanOptionalText(undefined), null);
+    assert.equal(cleanOptionalText(null), null);
     assert.equal(cleanOptionalText(""), null);
     assert.equal(cleanOptionalText("   "), null);
     assert.equal(cleanOptionalText("\n\t "), null);
@@ -47,9 +49,40 @@ describe("normalizeUrl", () => {
   });
 });
 
+describe("normalizeContactUrl", () => {
+  it("stores null, undefined, and blank as null", () => {
+    assert.equal(normalizeContactUrl(null), null);
+    assert.equal(normalizeContactUrl(undefined), null);
+    assert.equal(normalizeContactUrl(""), null);
+    assert.equal(normalizeContactUrl("   "), null);
+  });
+
+  it("keeps a real http(s) URL and prefixes a schemeless host", () => {
+    assert.equal(
+      normalizeContactUrl("https://www.linkedin.com/in/dana"),
+      "https://www.linkedin.com/in/dana",
+    );
+    assert.equal(normalizeContactUrl("http://legacy.example/in/dana"), "http://legacy.example/in/dana");
+    assert.equal(normalizeContactUrl("linkedin.com/in/dana"), "https://linkedin.com/in/dana");
+    assert.equal(
+      normalizeContactUrl("  www.linkedin.com/in/dana?trk=1  "),
+      "https://www.linkedin.com/in/dana?trk=1",
+    );
+  });
+
+  it("rejects placeholders and other non-URLs instead of prefixing https://", () => {
+    assert.throws(() => normalizeContactUrl("none"), /Invalid URL/);
+    assert.throws(() => normalizeContactUrl("https://none"), /Invalid URL/);
+    assert.throws(() => normalizeContactUrl("not a url"), /Invalid URL/);
+    assert.throws(() => normalizeContactUrl("ftp://files.example/in/dana"), /Invalid URL/);
+  });
+});
+
 describe("normalizeUsPhone", () => {
   it("returns null for empty input", () => {
     assert.equal(normalizeUsPhone(undefined), null);
+    assert.equal(normalizeUsPhone(null), null);
+    assert.equal(normalizeUsPhone(""), null);
     assert.equal(normalizeUsPhone("   "), null);
   });
 

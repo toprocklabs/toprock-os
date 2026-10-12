@@ -173,7 +173,7 @@ External PM agents keep the CRM current from meetings and git activity **without
 
 ### Suggestion kinds + payloads
 - `new_company` — `{ name, category?, address?, lat?, lng?, nearCompanyId?, nearCompanyName?, distanceMeters?, industry?, website? }` (sourcing + agent)
-- `new_contact` — `{ firstName, lastName, email?, phone?, title?, linkedinProfileUrl?, companyId? }` (US phone normalized)
+- `new_contact` — `{ firstName, lastName, email?, phone?, title?, linkedinProfileUrl?, companyId? }` (US phone normalized). `phone`, `title`, `linkedinProfileUrl`, and `companyId` accept `null`, omission, or `""` and store as null. A non-blank LinkedIn value must be a real http(s) URL (a schemeless host is prefixed with `https://`; placeholders like `none` are rejected). `email: null` is still rejected — send a real address, or omit / `""`.
 - `new_edge` — `{ fromType, fromId, toType, toId, edgeType, strength?, evidence? }`
 - `log_activity` — `{ type, notes, companyId?, contactId?, dealId?, occurredOn? }` (must attach to at least one record)
 - `stage_change` — `{ target: "account"|"opportunity", id, stage, reason }` (`reason` + evidence required)
