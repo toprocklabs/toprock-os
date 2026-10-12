@@ -5,7 +5,7 @@
 // out of it and the helpers were untestable. Extracted here unchanged —
 // behaviour is identical, only the location moved.
 
-export function cleanOptionalText(value: string | undefined) {
+export function cleanOptionalText(value: string | null | undefined) {
   if (!value) {
     return null;
   }
@@ -26,9 +26,34 @@ export function normalizeUrl(value: string | null) {
   return `https://${value}`;
 }
 
+// A LinkedIn (or other profile) URL. Blank input is "no URL". Anything else
+// must be a real http(s) address with a dotted host, so a placeholder like
+// "none" is rejected instead of being stored as "https://none".
+export function normalizeContactUrl(value: string | null | undefined) {
+  const normalized = normalizeUrl(cleanOptionalText(value));
+  if (!normalized) {
+    return null;
+  }
+
+  if (!isRealHttpUrl(normalized)) {
+    throw new Error("Invalid URL");
+  }
+
+  return normalized;
+}
+
+function isRealHttpUrl(value: string) {
+  try {
+    const url = new URL(value);
+    return (url.protocol === "http:" || url.protocol === "https:") && url.hostname.includes(".");
+  } catch {
+    return false;
+  }
+}
+
 // US-only by design (see AGENTS.md tech debt). Throws rather than silently
 // storing an unformatted number, so a bad paste surfaces at write time.
-export function normalizeUsPhone(value: string | undefined) {
+export function normalizeUsPhone(value: string | null | undefined) {
   const cleaned = cleanOptionalText(value);
   if (!cleaned) {
     return null;

@@ -1,7 +1,8 @@
 import { z } from "zod";
 import { accountStageOptions } from "@/lib/account-stage";
 import { edgeTypeOptions } from "@/lib/edge-type";
-import { cleanOptionalText, normalizeUrl, normalizeUsPhone } from "@/lib/normalize";
+import { optionalBlankTextSchema, optionalContactUrlSchema } from "@/lib/contact-fields";
+import { cleanOptionalText, normalizeUsPhone } from "@/lib/normalize";
 
 export const SUGGESTION_KINDS = [
   "new_company",
@@ -50,11 +51,13 @@ export const newContactPayloadSchema = z
   .object({
     firstName: z.string().trim().min(1),
     lastName: z.string().trim().min(1),
+    // Null stays rejected: a provided email must be a real address. Omit or ""
+    // still mean "no email" and are stored as null.
     email: z.string().trim().email().optional().or(z.literal("")),
-    phone: z.string().trim().optional(),
-    title: z.string().trim().optional(),
-    linkedinProfileUrl: z.string().trim().optional(),
-    companyId: z.number().int().positive().optional(),
+    phone: optionalBlankTextSchema,
+    title: optionalBlankTextSchema,
+    linkedinProfileUrl: optionalContactUrlSchema,
+    companyId: z.number().int().positive().nullish(),
   })
   .transform((payload) => {
     const phone = payload.phone ? normalizeUsPhone(payload.phone) : null;
@@ -64,7 +67,7 @@ export const newContactPayloadSchema = z
       email: cleanOptionalText(payload.email) ?? null,
       phone,
       title: cleanOptionalText(payload.title),
-      linkedinProfileUrl: normalizeUrl(cleanOptionalText(payload.linkedinProfileUrl) ?? null),
+      linkedinProfileUrl: payload.linkedinProfileUrl ?? null,
       companyId: payload.companyId ?? null,
     };
   });
